@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personal Expense Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Personal Expense Tracker</h1>
+            <p>Track your spending, understand your habits</p>
+        </div>
+
+        <div class="summary">
+            <div class="summary-card">
+                <h3>Total Expenses</h3>
+                <div class="amount" id="totalAmount">₹0.00</div>
+            </div>
+            <div class="summary-card">
+                <h3>Number of Transactions</h3>
+                <div class="amount" id="totalCount">0</div>
+            </div>
+            <div class="summary-card">
+                <h3>Highest Category</h3>
+                <div class="amount" id="highestCategory">-</div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="add-expense">
+                <h2>Add New Expense</h2>
+                <div class="error-message" id="errorMessage"></div>
+                
+                <div class="form-group">
+                    <label for="amount">Amount (₹)</label>
+                    <input type="number" id="amount" placeholder="100" min="0" step="0.01">
+                </div>
+
+                <div class="form-group">
+                    <label for="description">Description</label>
+                    <input type="text" id="description" placeholder="Lunch at cafe">
+                </div>
+
+                <div class="form-group">
+                    <label for="category">Category</label>
+                    <select id="category">
+                        <option value="food">🍔 Food & Dining</option>
+                        <option value="transport">🚗 Transport</option>
+                        <option value="entertainment">🎬 Entertainment</option>
+                        <option value="shopping">🛍️ Shopping</option>
+                        <option value="bills">📄 Bills & Utilities</option>
+                        <option value="other">📦 Other</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="date">Date</label>
+                    <input type="date" id="date">
+                </div>
+
+                <button class="btn btn-primary" id="addBtn">Add Expense</button>
+                <button class="btn btn-danger" id="clearAllBtn">Clear All Data</button>
+            </div>
+
+            <div class="expense-list">
+                <h2>Expense History</h2>
+                
+                <div class="filter-group">
+                    <select id="filterCategory">
+                        <option value="all">All Categories</option>
+                        <option value="food">🍔 Food & Dining</option>
+                        <option value="transport">🚗 Transport</option>
+                        <option value="entertainment">🎬 Entertainment</option>
+                        <option value="shopping">🛍️ Shopping</option>
+                        <option value="bills">📄 Bills & Utilities</option>
+                        <option value="other">📦 Other</option>
+                    </select>
+                </div>
+
+                <div class="expenses" id="expenseList"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
