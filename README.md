@@ -32,7 +32,7 @@ This project demonstrates extensive DOM manipulation techniques:
 8. Browser APIs
 
 ## How to Run
-Go To https://sanidhyapadhy.github.io/expense_tracker_end_term_project/ & Start adding expenses!
+Go To https://sanidhyapadhy.github.io/expense_tracker_wd2/ & Start adding expenses!
 
 ## Code Structure
 - All the logic has been divided as HTML file for the structure, CSS file for the design, and JS file for the functionality of the website.
