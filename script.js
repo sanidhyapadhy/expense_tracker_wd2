@@ -210,7 +210,7 @@ function clearAllExpenses() {
 
 /**
  * Export expenses to Excel (.xlsx) file
- * Uses SheetJS library to create proper Excel workbook
+ * Pure JavaScript implementation without external libraries
  */
 function exportToExcel() {
     // Check if there are expenses to export
@@ -219,42 +219,71 @@ function exportToExcel() {
         return;
     }
 
-    // Prepare data for Excel with formatted columns
-    const excelData = expenses.map(expense => {
-        // Get category display name
-        const categoryName = categorySelect.querySelector(`option[value="${expense.category}"]`).textContent;
-        
-        return {
-            'Date': formatDate(expense.date),
-            'Description': expense.description,
-            'Category': categoryName,
-            'Amount (₹)': expense.amount.toFixed(2)
-        };
-    });
-
-    // Create a new workbook
-    const wb = XLSX.utils.book_new();
+    // Prepare data rows
+    const rows = [];
     
-    // Convert data to worksheet
-    const ws = XLSX.utils.json_to_sheet(excelData);
+    // Add header row
+    rows.push(['Date', 'Description', 'Category', 'Amount (₹)']);
+    
+    // Add expense data
+    expenses.forEach(expense => {
+        const categoryName = categorySelect.querySelector(`option[value="${expense.category}"]`).textContent;
+        rows.push([
+            formatDate(expense.date),
+            expense.description,
+            categoryName,
+            expense.amount.toFixed(2)
+        ]);
+    });
+    
+    // Add summary row
+    const total = expenses.reduce((sum, e) => sum + e.amount, 0);
+    rows.push([]);
+    rows.push(['TOTAL', '', '', total.toFixed(2)]);
 
-    // Set column widths for better readability
-    ws['!cols'] = [
-        { wch: 15 },  // Date column
-        { wch: 30 },  // Description column
-        { wch: 20 },  // Category column
-        { wch: 12 }   // Amount column
-    ];
+    // Convert to Excel XML format
+    let xml = '<?xml version="1.0"?><?mso-application progid="Excel.Sheet"?>';
+    xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ';
+    xml += 'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">';
+    xml += '<Worksheet ss:Name="Expenses"><Table>';
+    
+    rows.forEach((row, rowIndex) => {
+        xml += '<Row>';
+        row.forEach((cell, cellIndex) => {
+            // Header row styling
+            if (rowIndex === 0) {
+                xml += '<Cell><Data ss:Type="String"><b>' + cell + '</b></Data></Cell>';
+            }
+            // Total row styling
+            else if (rowIndex === rows.length - 1) {
+                xml += '<Cell><Data ss:Type="' + (cellIndex === 3 ? 'Number' : 'String') + '"><b>' + cell + '</b></Data></Cell>';
+            }
+            // Regular data
+            else {
+                const type = cellIndex === 3 ? 'Number' : 'String';
+                xml += '<Cell><Data ss:Type="' + type + '">' + cell + '</Data></Cell>';
+            }
+        });
+        xml += '</Row>';
+    });
+    
+    xml += '</Table></Worksheet></Workbook>';
 
-    // Add worksheet to workbook
-    XLSX.utils.book_append_sheet(wb, ws, 'Expenses');
-
+    // Create blob and download
+    const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    
     // Generate filename with current date
     const today = new Date();
-    const filename = `Expenses_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.xlsx`;
-
-    // Download the file
-    XLSX.writeFile(wb, filename);
+    const filename = `Expenses_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.xls`;
+    
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
 }
 
 // ============================================
