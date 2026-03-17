@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Personal Expense Tracker</title>
-    <link rel="stylesheet" href="styles.css">
     <link rel="icon" type="image/png" href="expense.png">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
@@ -30,8 +30,30 @@
         </div>
 
         <div class="content">
+            <div class="expense-list">
+                <h2>Expense History</h2>
+                
+                <div class="filter-group">
+                    <select id="filterCategory">
+                        <option value="all">All Categories</option>
+                        <option value="food">🍔 Food & Dining</option>
+                        <option value="transport">🚗 Transport</option>
+                        <option value="entertainment">🎬 Entertainment</option>
+                        <option value="shopping">🛍️ Shopping</option>
+                        <option value="bills">📄 Bills & Utilities</option>
+                        <option value="salon">💆‍♂️ Salon & Care</option>
+                        <option value="other">📦 Other</option>
+                    </select>
+                </div>
+
+                <div class="expenses" id="expenseList"></div>
+            </div>
+
             <div class="add-expense">
-                <h2>Add New Expense</h2>
+                <div class="form-header">
+                    <h2>Add Expense</h2>
+                    <span class="close-form" id="closeForm">&times;</span>
+                </div>
                 <div class="error-message" id="errorMessage"></div>
                 
                 <div class="form-group">
@@ -62,38 +84,49 @@
                     <input type="date" id="date">
                 </div>
 
-                <button class="btn btn-primary" id="addBtn">Add Expense</button>
-                <button class="btn btn-success" id="exportBtn">Export to Excel</button>
-                <button class="btn btn-danger" id="clearAllBtn">Clear All Data</button>
-            </div>
-
-            <div class="expense-list">
-                <h2>Expense History</h2>
-                
-                <div class="filter-group">
-                    <select id="filterCategory">
-                        <option value="all">All Categories</option>
-                        <option value="food">🍔 Food & Dining</option>
-                        <option value="transport">🚗 Transport</option>
-                        <option value="entertainment">🎬 Entertainment</option>
-                        <option value="shopping">🛍️ Shopping</option>
-                        <option value="bills">📄 Bills & Utilities</option>
-                        <option value="salon">💆‍♂️ Salon & Care</option>
-                        <option value="other">📦 Other</option>
-                    </select>
+                <div class="button-grid">
+                    <button class="btn btn-primary" id="addBtn" type="button">Add</button>
+                    <button class="btn btn-success" id="exportBtn" type="button">Excel</button>
+                    <button class="btn btn-info" id="generateQRBtn" type="button">QR</button>
+                    <button class="btn btn-warning" id="importQRBtn" type="button">Import</button>
+                    <button class="btn btn-danger" id="clearAllBtn" type="button">Clear All</button>
                 </div>
+            </div>
+        </div>
 
-                <div class="expenses" id="expenseList"></div>
+        <!-- Floating Add Button (Mobile Only) -->
+        <button class="fab" id="fabBtn" type="button">
+            <span>+</span>
+        </button>
+
+        <!-- Form Overlay Background (Mobile Only) -->
+        <div class="form-overlay" id="formOverlay"></div>
+
+        <!-- QR Code Modal -->
+        <div class="modal" id="qrModal">
+            <div class="modal-content">
+                <span class="close" id="closeModal">&times;</span>
+                <h2>Scan this QR Code</h2>
+                <p>Open this app on another device and click "Import from QR"</p>
+                <div id="qrCodeContainer"></div>
+                <button class="btn btn-primary" id="downloadQRBtn" type="button">Download QR Code</button>
+            </div>
+        </div>
+
+        <!-- Import QR Modal -->
+        <div class="modal" id="importModal">
+            <div class="modal-content">
+                <span class="close" id="closeImportModal">&times;</span>
+                <h2>Import Data from QR Code</h2>
+                <p>Upload a QR code image or scan with camera</p>
+                <input type="file" id="qrFileInput" accept="image/*" style="margin: 20px 0;">
+                <div id="importStatus"></div>
             </div>
         </div>
     </div>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
     <script src="script.js"></script>
 </body>
-
 </html>
-
-
-
-
