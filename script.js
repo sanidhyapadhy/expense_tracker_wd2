@@ -12,6 +12,8 @@ const categorySelect = document.getElementById('category');
 const dateInput = document.getElementById('date');
 const addBtn = document.getElementById('addBtn');
 const exportBtn = document.getElementById('exportBtn');
+const generateQRBtn = document.getElementById('generateQRBtn');
+const importQRBtn = document.getElementById('importQRBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const expenseList = document.getElementById('expenseList');
 const filterCategory = document.getElementById('filterCategory');
@@ -19,6 +21,22 @@ const errorMessage = document.getElementById('errorMessage');
 const totalAmount = document.getElementById('totalAmount');
 const totalCount = document.getElementById('totalCount');
 const highestCategory = document.getElementById('highestCategory');
+
+// Modal elements
+const qrModal = document.getElementById('qrModal');
+const importModal = document.getElementById('importModal');
+const closeModal = document.getElementById('closeModal');
+const closeImportModal = document.getElementById('closeImportModal');
+const qrCodeContainer = document.getElementById('qrCodeContainer');
+const downloadQRBtn = document.getElementById('downloadQRBtn');
+const qrFileInput = document.getElementById('qrFileInput');
+const importStatus = document.getElementById('importStatus');
+
+// Form overlay elements (mobile)
+const fabBtn = document.getElementById('fabBtn');
+const formOverlay = document.getElementById('formOverlay');
+const closeForm = document.getElementById('closeForm');
+const addExpenseForm = document.querySelector('.add-expense');
 
 // ============================================
 // INITIALIZATION
@@ -157,6 +175,9 @@ function addExpense() {
     renderExpenses();
     updateSummary();
     clearForm();
+    
+    // Close form on mobile after adding
+    closeAddForm();
 }
 
 /**
@@ -190,6 +211,25 @@ function clearForm() {
 }
 
 /**
+ * Open add expense form (mobile)
+ */
+function openAddForm() {
+    addExpenseForm.classList.add('active');
+    formOverlay.classList.add('active');
+    document.body.classList.add('modal-open');
+    amountInput.focus();
+}
+
+/**
+ * Close add expense form (mobile)
+ */
+function closeAddForm() {
+    addExpenseForm.classList.remove('active');
+    formOverlay.classList.remove('active');
+    document.body.classList.remove('modal-open');
+}
+
+/**
  * Clear all expenses from the list
  */
 function clearAllExpenses() {
@@ -213,11 +253,15 @@ function clearAllExpenses() {
  * Pure JavaScript implementation without external libraries
  */
 function exportToExcel() {
+    console.log('Export button clicked!'); // Debug log
+    
     // Check if there are expenses to export
     if (expenses.length === 0) {
         showError('No expenses to export');
         return;
     }
+
+    console.log('Exporting', expenses.length, 'expenses'); // Debug log
 
     // Prepare data rows
     const rows = [];
@@ -271,19 +315,187 @@ function exportToExcel() {
 
     // Create blob and download
     const blob = new Blob([xml], { type: 'application/vnd.ms-excel' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
     
     // Generate filename with current date
     const today = new Date();
     const filename = `Expenses_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.xls`;
     
-    link.href = url;
+    // Try multiple download methods for better compatibility
+    if (window.navigator.msSaveOrOpenBlob) {
+        // For IE/Edge
+        window.navigator.msSaveOrOpenBlob(blob, filename);
+    } else {
+        // For modern browsers
+        const url = window.URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.style.display = 'none';
+        
+        document.body.appendChild(link);
+        link.click();
+        
+        // Cleanup
+        setTimeout(() => {
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        }, 100);
+    }
+    
+    console.log('Export completed!'); // Debug log
+}
+
+// ============================================
+// QR CODE SYNC FUNCTIONS
+// ============================================
+
+/**
+ * Generate QR Code with all expense data
+ */
+function generateQRCode() {
+    if (expenses.length === 0) {
+        showError('No expenses to export via QR code');
+        return;
+    }
+
+    // Clear previous QR code
+    qrCodeContainer.innerHTML = '';
+
+    // Convert expenses to JSON string
+    const dataString = JSON.stringify(expenses);
+
+    // Check if data is too large for QR code
+    if (dataString.length > 2953) {
+        showError('Too much data for QR code. Try exporting fewer expenses or use Excel export.');
+        return;
+    }
+
+    // Generate QR code
+    const qr = new QRCode(qrCodeContainer, {
+        text: dataString,
+        width: 300,
+        height: 300,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.L
+    });
+
+    // Show modal
+    qrModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+}
+
+/**
+ * Download QR code as image
+ */
+function downloadQRCode() {
+    const canvas = qrCodeContainer.querySelector('canvas');
+    if (!canvas) return;
+
+    const link = document.createElement('a');
+    const today = new Date();
+    const filename = `ExpenseQR_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.png`;
+    
     link.download = filename;
-    document.body.appendChild(link);
+    link.href = canvas.toDataURL();
     link.click();
-    document.body.removeChild(link);
-    window.URL.revokeObjectURL(url);
+}
+
+/**
+ * Open import QR modal
+ */
+function openImportModal() {
+    importModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+    importStatus.style.display = 'none';
+    qrFileInput.value = '';
+}
+
+/**
+ * Process uploaded QR code image
+ */
+function processQRImage(file) {
+    if (!file || !file.type.startsWith('image/')) {
+        showImportError('Please select a valid image file');
+        return;
+    }
+
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const img = new Image();
+        
+        img.onload = function() {
+            // Create canvas to read image data
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+            
+            // Get image data
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Decode QR code
+            const code = jsQR(imageData.data, imageData.width, imageData.height);
+            
+            if (code) {
+                try {
+                    // Parse JSON data
+                    const importedExpenses = JSON.parse(code.data);
+                    
+                    // Validate data structure
+                    if (!Array.isArray(importedExpenses)) {
+                        throw new Error('Invalid data format');
+                    }
+
+                    // Confirm before importing
+                    const confirmMsg = `Found ${importedExpenses.length} expenses. Import and merge with existing data?`;
+                    if (confirm(confirmMsg)) {
+                        // Merge with existing expenses (avoid duplicates by ID)
+                        const existingIds = new Set(expenses.map(e => e.id));
+                        const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+                        
+                        expenses = [...expenses, ...newExpenses];
+                        saveExpenses();
+                        renderExpenses();
+                        updateSummary();
+                        
+                        showImportSuccess(`Successfully imported ${newExpenses.length} new expenses!`);
+                        
+                        setTimeout(() => {
+                            importModal.style.display = 'none';
+                            document.body.classList.remove('modal-open');
+                        }, 2000);
+                    }
+                } catch (error) {
+                    showImportError('Invalid QR code data. Please use a QR code generated by this app.');
+                }
+            } else {
+                showImportError('No QR code found in image. Please try again.');
+            }
+        };
+        
+        img.src = e.target.result;
+    };
+    
+    reader.readAsDataURL(file);
+}
+
+/**
+ * Show import success message
+ */
+function showImportSuccess(message) {
+    importStatus.textContent = message;
+    importStatus.className = 'success';
+}
+
+/**
+ * Show import error message
+ */
+function showImportError(message) {
+    importStatus.textContent = message;
+    importStatus.className = 'error';
 }
 
 // ============================================
@@ -385,6 +597,46 @@ addBtn.addEventListener('click', addExpense);
 
 // Export to Excel button click
 exportBtn.addEventListener('click', exportToExcel);
+
+// QR Code buttons
+generateQRBtn.addEventListener('click', generateQRCode);
+importQRBtn.addEventListener('click', openImportModal);
+downloadQRBtn.addEventListener('click', downloadQRCode);
+
+// Modal close buttons
+closeModal.addEventListener('click', () => {
+    qrModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+});
+
+closeImportModal.addEventListener('click', () => {
+    importModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+});
+
+// Close modal when clicking outside
+window.addEventListener('click', (e) => {
+    if (e.target === qrModal) {
+        qrModal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+    if (e.target === importModal) {
+        importModal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+});
+
+// QR file input change
+qrFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+        processQRImage(e.target.files[0]);
+    }
+});
+
+// Form overlay handlers (mobile)
+fabBtn.addEventListener('click', openAddForm);
+closeForm.addEventListener('click', closeAddForm);
+formOverlay.addEventListener('click', closeAddForm);
 
 // Clear all data button click
 clearAllBtn.addEventListener('click', clearAllExpenses);
