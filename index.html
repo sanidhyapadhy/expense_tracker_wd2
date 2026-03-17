@@ -106,10 +106,19 @@
         <div class="modal" id="qrModal">
             <div class="modal-content">
                 <span class="close" id="closeModal">&times;</span>
-                <h2>Scan this QR Code</h2>
-                <p>Open this app on another device and click "Import from QR"</p>
+                <h2>Scan QR Code</h2>
+                <p>Scan on another device and click "Import from QR"</p>
                 <div id="qrCodeContainer"></div>
-                <button class="btn btn-primary" id="downloadQRBtn" type="button">Download QR Code</button>
+                
+                <!-- Progress Indicator -->
+                <div id="qrProgress" class="qr-progress"></div>
+                
+                <!-- Navigation Buttons -->
+                <div class="qr-navigation">
+                    <button class="btn btn-secondary" id="prevQRBtn" type="button" onclick="prevQRPage()">← Previous</button>
+                    <button class="btn btn-primary" id="downloadQRBtn" type="button">Download Current</button>
+                    <button class="btn btn-secondary" id="nextQRBtn" type="button" onclick="nextQRPage()">Next →</button>
+                </div>
             </div>
         </div>
 
@@ -118,8 +127,24 @@
             <div class="modal-content">
                 <span class="close" id="closeImportModal">&times;</span>
                 <h2>Import Data from QR Code</h2>
-                <p>Upload a QR code image or scan with camera</p>
-                <input type="file" id="qrFileInput" accept="image/*" style="margin: 20px 0;">
+                <p>Scan with camera or upload QR code image</p>
+                
+                <!-- Import Options -->
+                <div class="import-options">
+                    <button class="btn btn-primary" id="scanCameraBtn" type="button">📷 Scan with Camera</button>
+                    <button class="btn btn-success" id="uploadImageBtn" type="button">🖼️ Upload Image</button>
+                </div>
+                
+                <!-- Camera Preview (hidden by default) -->
+                <div id="cameraPreview" style="display: none;">
+                    <video id="qrVideo" autoplay playsinline></video>
+                    <canvas id="qrCanvas" style="display: none;"></canvas>
+                    <button class="btn btn-danger" id="stopCameraBtn" type="button">Stop Camera</button>
+                </div>
+                
+                <!-- File Input (hidden) -->
+                <input type="file" id="qrFileInput" accept="image/*" style="display: none;">
+                
                 <div id="importStatus"></div>
             </div>
         </div>
