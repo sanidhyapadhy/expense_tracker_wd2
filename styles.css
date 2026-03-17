@@ -593,6 +593,106 @@ body.modal-open {
     display: block;
 }
 
+/* QR Progress Indicator */
+.qr-progress {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.progress-dot {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: #e9ecef;
+    color: #6c757d;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s;
+    border: 2px solid transparent;
+}
+
+.progress-dot:hover {
+    background: #dee2e6;
+    transform: scale(1.1);
+}
+
+.progress-dot.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+    transform: scale(1.15);
+    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.progress-arrow {
+    color: #adb5bd;
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+/* QR Navigation Buttons */
+.qr-navigation {
+    display: flex;
+    gap: 10px;
+    margin-top: 15px;
+    flex-wrap: wrap;
+}
+
+.qr-navigation .btn {
+    flex: 1;
+    min-width: 120px;
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:active {
+    background: #5a6268;
+    transform: scale(0.98);
+}
+
+/* Import Options */
+.import-options {
+    display: flex;
+    gap: 10px;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.import-options .btn {
+    flex: 1;
+    min-width: 140px;
+}
+
+/* Camera Preview */
+#cameraPreview {
+    margin: 20px 0;
+    text-align: center;
+}
+
+#qrVideo {
+    width: 100%;
+    max-width: 400px;
+    border-radius: 10px;
+    border: 2px solid #667eea;
+    margin-bottom: 15px;
+}
+
+#stopCameraBtn {
+    width: 100%;
+    max-width: 400px;
+}
+
 /* Desktop Responsive - Only activate on larger screens */
 @media (min-width: 768px) {
     body {
