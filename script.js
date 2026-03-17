@@ -38,6 +38,18 @@ const formOverlay = document.getElementById('formOverlay');
 const closeForm = document.getElementById('closeForm');
 const addExpenseForm = document.querySelector('.add-expense');
 
+// Camera elements
+const scanCameraBtn = document.getElementById('scanCameraBtn');
+const uploadImageBtn = document.getElementById('uploadImageBtn');
+const stopCameraBtn = document.getElementById('stopCameraBtn');
+const cameraPreview = document.getElementById('cameraPreview');
+const qrVideo = document.getElementById('qrVideo');
+const qrCanvas = document.getElementById('qrCanvas');
+
+// Camera stream
+let cameraStream = null;
+let scanningInterval = null;
+
 // ============================================
 // INITIALIZATION
 // ============================================
@@ -351,9 +363,10 @@ function exportToExcel() {
 
 /**
  * Generate QR Code with all expense data
+ * Splits into multiple QR codes if needed
  */
 function generateQRCode() {
-    console.log('Generate QR clicked!'); // Debug log
+    console.log('Generate QR clicked!');
     
     if (expenses.length === 0) {
         showError('No expenses to export via QR code');
@@ -363,45 +376,150 @@ function generateQRCode() {
     // Clear previous QR code
     qrCodeContainer.innerHTML = '';
 
-    // Compress data for QR code - use minimal format
-    const compressedData = expenses.map(e => [
-        e.id,
+    const categoryMap = { food: 'f', transport: 't', entertainment: 'e', shopping: 's', bills: 'b', salon: 'h', other: 'o' };
+    
+    // Compress all expenses
+    const compressedData = expenses.map((e, idx) => [
+        idx,
         e.amount,
-        e.description,
-        e.category,
-        e.date
+        e.description.substring(0, 12),
+        categoryMap[e.category] || 'o',
+        e.date.substring(2).replace(/-/g, '')
     ]);
 
-    // Convert to compact JSON string
-    const dataString = JSON.stringify(compressedData);
-
-    console.log('Original expenses:', expenses.length);
-    console.log('Data size:', dataString.length, 'characters');
-
-    // QR Code capacity with Low error correction: ~2953 chars
-    // With Medium: ~2331 chars
-    // We'll use Low for maximum capacity
-    if (dataString.length > 2900) {
-        const estimatedCapacity = Math.floor((2900 / dataString.length) * expenses.length);
-        showError(`Too much data for QR code (${expenses.length} expenses). Maximum ~${estimatedCapacity} expenses supported. Try exporting by date range or use Excel export.`);
-        return;
+    const idMapping = expenses.map(e => e.id);
+    
+    // Calculate how many expenses fit per QR
+    const samplePayload = JSON.stringify([[compressedData[0]], idMapping.slice(0, 1)]);
+    const charsPerExpense = samplePayload.length;
+    const QR_LIMIT = 2850; // Safe limit with some buffer
+    const expensesPerQR = Math.floor(QR_LIMIT / charsPerExpense);
+    
+    console.log('Chars per expense:', charsPerExpense);
+    console.log('Expenses per QR:', expensesPerQR);
+    
+    // Split into chunks
+    const totalQRs = Math.ceil(expenses.length / expensesPerQR);
+    const qrPages = [];
+    
+    for (let i = 0; i < totalQRs; i++) {
+        const start = i * expensesPerQR;
+        const end = Math.min((i + 1) * expensesPerQR, expenses.length);
+        
+        const chunkData = compressedData.slice(start, end);
+        const chunkIds = idMapping.slice(start, end);
+        
+        // Add metadata: [pageNum, totalPages, data, ids]
+        const payload = {
+            p: i + 1,        // Current page
+            t: totalQRs,     // Total pages
+            d: chunkData,    // Data
+            i: chunkIds      // IDs
+        };
+        
+        qrPages.push(JSON.stringify(payload));
     }
+    
+    console.log(`Generated ${totalQRs} QR codes for ${expenses.length} expenses`);
+    
+    // Store all QR pages
+    window.currentQRPages = qrPages;
+    window.currentQRIndex = 0;
+    
+    // Show first QR
+    showQRPage(0);
+    
+    // Show modal
+    qrModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+}
 
-    // Generate QR code with Low error correction for maximum data
-    const qr = new QRCode(qrCodeContainer, {
-        text: dataString,
+/**
+ * Display specific QR page
+ */
+function showQRPage(index) {
+    const qrPages = window.currentQRPages;
+    const totalPages = qrPages.length;
+    
+    if (index < 0 || index >= totalPages) return;
+    
+    window.currentQRIndex = index;
+    
+    // Clear container
+    qrCodeContainer.innerHTML = '';
+    
+    // Generate QR code
+    new QRCode(qrCodeContainer, {
+        text: qrPages[index],
         width: 300,
         height: 300,
         colorDark: '#000000',
         colorLight: '#ffffff',
-        correctLevel: QRCode.CorrectLevel.L // Low = maximum data capacity
+        correctLevel: QRCode.CorrectLevel.L
     });
+    
+    // Update progress indicator
+    updateQRProgress(index, totalPages);
+    
+    console.log(`Showing QR ${index + 1} of ${totalPages}`);
+}
 
-    console.log('QR code generated successfully!');
+/**
+ * Update QR progress indicator
+ */
+function updateQRProgress(currentIndex, totalPages) {
+    const progressContainer = document.getElementById('qrProgress');
+    if (!progressContainer) return;
+    
+    if (totalPages === 1) {
+        progressContainer.style.display = 'none';
+        return;
+    }
+    
+    progressContainer.style.display = 'flex';
+    progressContainer.innerHTML = '';
+    
+    for (let i = 0; i < totalPages; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'progress-dot';
+        if (i === currentIndex) {
+            dot.classList.add('active');
+        }
+        dot.textContent = i + 1;
+        dot.onclick = () => showQRPage(i);
+        progressContainer.appendChild(dot);
+        
+        // Add arrow between dots
+        if (i < totalPages - 1) {
+            const arrow = document.createElement('div');
+            arrow.className = 'progress-arrow';
+            arrow.textContent = '→';
+            progressContainer.appendChild(arrow);
+        }
+    }
+}
 
-    // Show modal
-    qrModal.style.display = 'block';
-    document.body.classList.add('modal-open');
+/**
+ * Navigate to next QR page
+ */
+function nextQRPage() {
+    const totalPages = window.currentQRPages?.length || 0;
+    const currentIndex = window.currentQRIndex || 0;
+    
+    if (currentIndex < totalPages - 1) {
+        showQRPage(currentIndex + 1);
+    }
+}
+
+/**
+ * Navigate to previous QR page
+ */
+function prevQRPage() {
+    const currentIndex = window.currentQRIndex || 0;
+    
+    if (currentIndex > 0) {
+        showQRPage(currentIndex - 1);
+    }
 }
 
 /**
@@ -411,13 +529,25 @@ function downloadQRCode() {
     const canvas = qrCodeContainer.querySelector('canvas');
     if (!canvas) return;
 
+    const currentIndex = window.currentQRIndex || 0;
+    const totalPages = window.currentQRPages?.length || 1;
+    
     const link = document.createElement('a');
     const today = new Date();
-    const filename = `ExpenseQR_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.png`;
+    const dateStr = `${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}`;
+    
+    let filename;
+    if (totalPages > 1) {
+        filename = `ExpenseQR_${dateStr}_Part${currentIndex + 1}of${totalPages}.png`;
+    } else {
+        filename = `ExpenseQR_${dateStr}.png`;
+    }
     
     link.download = filename;
     link.href = canvas.toDataURL();
     link.click();
+    
+    console.log(`Downloaded QR ${currentIndex + 1}/${totalPages}`);
 }
 
 /**
@@ -428,6 +558,96 @@ function openImportModal() {
     document.body.classList.add('modal-open');
     importStatus.style.display = 'none';
     qrFileInput.value = '';
+    
+    // Reset multi-QR import state
+    window.qrImportPages = window.qrImportPages || {};
+    
+    // Hide camera preview
+    stopCamera();
+}
+
+/**
+ * Start camera for QR scanning
+ */
+async function startCamera() {
+    try {
+        // Request camera access
+        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } // Use back camera on mobile
+        });
+        
+        qrVideo.srcObject = cameraStream;
+        cameraPreview.style.display = 'block';
+        
+        // Start scanning
+        scanningInterval = setInterval(scanQRFromCamera, 300);
+        
+        console.log('Camera started');
+    } catch (error) {
+        console.error('Camera error:', error);
+        showImportError('Camera access denied. Please allow camera permission or use "Upload Image".');
+    }
+}
+
+/**
+ * Stop camera
+ */
+function stopCamera() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    
+    if (scanningInterval) {
+        clearInterval(scanningInterval);
+        scanningInterval = null;
+    }
+    
+    cameraPreview.style.display = 'none';
+    qrVideo.srcObject = null;
+    
+    console.log('Camera stopped');
+}
+
+/**
+ * Scan QR code from camera feed
+ */
+function scanQRFromCamera() {
+    if (qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
+        const canvas = qrCanvas;
+        const ctx = canvas.getContext('2d');
+        
+        canvas.width = qrVideo.videoWidth;
+        canvas.height = qrVideo.videoHeight;
+        
+        ctx.drawImage(qrVideo, 0, 0, canvas.width, canvas.height);
+        
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        
+        if (code) {
+            console.log('QR code detected from camera!');
+            
+            // Stop camera
+            stopCamera();
+            
+            // Process QR data
+            try {
+                const importedData = JSON.parse(code.data);
+                const categoryReverseMap = { f: 'food', t: 'transport', e: 'entertainment', s: 'shopping', b: 'bills', h: 'salon', o: 'other' };
+                
+                // Check if multi-page QR
+                if (importedData.p !== undefined && importedData.t !== undefined) {
+                    handleMultiPageQR(importedData, categoryReverseMap);
+                } else {
+                    handleSingleQR(importedData, categoryReverseMap);
+                }
+            } catch (error) {
+                console.error('QR parse error:', error);
+                showImportError('Invalid QR code. Use QR from this app only.');
+            }
+        }
+    }
 }
 
 /**
@@ -445,71 +665,38 @@ function processQRImage(file) {
         const img = new Image();
         
         img.onload = function() {
-            // Create canvas to read image data
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             canvas.width = img.width;
             canvas.height = img.height;
             ctx.drawImage(img, 0, 0);
             
-            // Get image data
             const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            // Decode QR code
             const code = jsQR(imageData.data, imageData.width, imageData.height);
             
             if (code) {
                 try {
-                    // Parse JSON data
                     const importedData = JSON.parse(code.data);
                     
-                    // Check if it's compressed format (array of arrays) or old format (array of objects)
-                    let importedExpenses;
+                    console.log('=== QR Import Debug ===');
+                    console.log('Imported data:', importedData);
                     
-                    if (Array.isArray(importedData[0])) {
-                        // Compressed format - decompress to full expense objects
-                        importedExpenses = importedData.map(e => ({
-                            id: e[0],
-                            amount: e[1],
-                            description: e[2],
-                            category: e[3],
-                            date: e[4]
-                        }));
+                    const categoryReverseMap = { f: 'food', t: 'transport', e: 'entertainment', s: 'shopping', b: 'bills', h: 'salon', o: 'other' };
+                    
+                    // Check if this is a multi-page QR
+                    if (importedData.p !== undefined && importedData.t !== undefined) {
+                        handleMultiPageQR(importedData, categoryReverseMap);
                     } else {
-                        // Old format - already objects
-                        importedExpenses = importedData;
+                        // Single QR or old format
+                        handleSingleQR(importedData, categoryReverseMap);
                     }
                     
-                    // Validate data structure
-                    if (!Array.isArray(importedExpenses)) {
-                        throw new Error('Invalid data format');
-                    }
-
-                    // Confirm before importing
-                    const confirmMsg = `Found ${importedExpenses.length} expenses. Import and merge with existing data?`;
-                    if (confirm(confirmMsg)) {
-                        // Merge with existing expenses (avoid duplicates by ID)
-                        const existingIds = new Set(expenses.map(e => e.id));
-                        const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
-                        
-                        expenses = [...expenses, ...newExpenses];
-                        saveExpenses();
-                        renderExpenses();
-                        updateSummary();
-                        
-                        showImportSuccess(`Successfully imported ${newExpenses.length} new expenses!`);
-                        
-                        setTimeout(() => {
-                            importModal.style.display = 'none';
-                            document.body.classList.remove('modal-open');
-                        }, 2000);
-                    }
                 } catch (error) {
-                    console.error('QR decode error:', error);
-                    showImportError('Invalid QR code data. Please use a QR code generated by this app.');
+                    console.error('QR error:', error);
+                    showImportError('Invalid QR code. Use QR from this app only.');
                 }
             } else {
-                showImportError('No QR code found in image. Please try again.');
+                showImportError('No QR code found. Try again.');
             }
         };
         
@@ -517,6 +704,133 @@ function processQRImage(file) {
     };
     
     reader.readAsDataURL(file);
+}
+
+/**
+ * Handle multi-page QR import
+ */
+function handleMultiPageQR(qrData, categoryMap) {
+    const currentPage = qrData.p;
+    const totalPages = qrData.t;
+    
+    // Store this page
+    window.qrImportPages = window.qrImportPages || {};
+    window.qrImportPages[currentPage] = {
+        data: qrData.d,
+        ids: qrData.i
+    };
+    
+    const receivedPages = Object.keys(window.qrImportPages).length;
+    
+    console.log(`Received QR ${currentPage}/${totalPages} (${receivedPages} total)`);
+    
+    if (receivedPages < totalPages) {
+        // Need more pages
+        showImportSuccess(`QR ${currentPage}/${totalPages} scanned! Please scan ${totalPages - receivedPages} more QR code(s).`);
+        
+        // Don't close modal, wait for more QRs
+        qrFileInput.value = ''; // Reset input to allow same file again
+    } else {
+        // All pages received!
+        console.log('All QR pages received! Merging...');
+        
+        // Merge all pages in order
+        let allData = [];
+        let allIds = [];
+        
+        for (let i = 1; i <= totalPages; i++) {
+            const page = window.qrImportPages[i];
+            if (page) {
+                allData = allData.concat(page.data);
+                allIds = allIds.concat(page.ids);
+            }
+        }
+        
+        // Reconstruct expenses
+        const importedExpenses = allData.map((e, idx) => ({
+            id: allIds[idx],
+            amount: e[1],
+            description: e[2],
+            category: categoryMap[e[3]] || 'other',
+            date: '20' + e[4].substring(0,2) + '-' + e[4].substring(2,4) + '-' + e[4].substring(4,6)
+        }));
+        
+        console.log(`Reconstructed ${importedExpenses.length} expenses from ${totalPages} QR codes`);
+        
+        // Confirm import
+        const confirmMsg = `All ${totalPages} QR codes scanned!\n\nFound ${importedExpenses.length} expenses. Import and merge?\n\n⚠️ Descriptions may be truncated to 12 chars.`;
+        if (confirm(confirmMsg)) {
+            const existingIds = new Set(expenses.map(e => e.id));
+            const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+            
+            expenses = [...expenses, ...newExpenses];
+            saveExpenses();
+            renderExpenses();
+            updateSummary();
+            
+            showImportSuccess(`Successfully imported ${newExpenses.length} expenses from ${totalPages} QR codes!`);
+            
+            // Reset multi-QR state
+            window.qrImportPages = {};
+            
+            setTimeout(() => {
+                importModal.style.display = 'none';
+                document.body.classList.remove('modal-open');
+            }, 3000);
+        } else {
+            // User cancelled, reset state
+            window.qrImportPages = {};
+        }
+    }
+}
+
+/**
+ * Handle single QR or old format
+ */
+function handleSingleQR(importedData, categoryMap) {
+    let importedExpenses;
+    
+    // Old format with ID mapping: [[data], [ids]]
+    if (Array.isArray(importedData) && importedData.length === 2 && Array.isArray(importedData[1])) {
+        console.log('Format: Old compressed with ID mapping');
+        const [dataArray, idArray] = importedData;
+        
+        importedExpenses = dataArray.map((e, idx) => ({
+            id: idArray[idx],
+            amount: e[1],
+            description: e[2],
+            category: categoryMap[e[3]] || 'other',
+            date: '20' + e[4].substring(0,2) + '-' + e[4].substring(2,4) + '-' + e[4].substring(4,6)
+        }));
+    }
+    // Original format
+    else if (Array.isArray(importedData) && importedData[0]?.id !== undefined) {
+        console.log('Format: Original');
+        importedExpenses = importedData;
+    }
+    else {
+        throw new Error('Unrecognized format');
+    }
+    
+    console.log('Imported:', importedExpenses.length, 'expenses');
+
+    const confirmMsg = `Found ${importedExpenses.length} expenses. Import and merge?\n\n⚠️ Descriptions may be truncated to 12 chars.`;
+    if (confirm(confirmMsg)) {
+        const existingIds = new Set(expenses.map(e => e.id));
+        const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+        
+        expenses = [...expenses, ...newExpenses];
+        saveExpenses();
+        renderExpenses();
+        updateSummary();
+        
+        showImportSuccess(`Imported ${newExpenses.length} new expenses!`);
+        
+        setTimeout(() => {
+            importModal.style.display = 'none';
+            document.body.classList.remove('modal-open');
+        }, 2000);
+    }
 }
 
 /**
@@ -669,6 +983,13 @@ qrFileInput.addEventListener('change', (e) => {
         processQRImage(e.target.files[0]);
     }
 });
+
+// Camera scan buttons
+scanCameraBtn.addEventListener('click', startCamera);
+uploadImageBtn.addEventListener('click', () => {
+    qrFileInput.click();
+});
+stopCameraBtn.addEventListener('click', stopCamera);
 
 // Form overlay handlers (mobile)
 fabBtn.addEventListener('click', openAddForm);
