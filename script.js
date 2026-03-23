@@ -2,6 +2,8 @@
 // STATE MANAGEMENT
 // ============================================
 let expenses = [];
+let cameraStream = null;
+let scanningInterval = null;
 
 // ============================================
 // DOM ELEMENT REFERENCES
@@ -38,6 +40,15 @@ const formOverlay = document.getElementById('formOverlay');
 const closeForm = document.getElementById('closeForm');
 const addExpenseForm = document.querySelector('.add-expense');
 
+// Debug: Check if critical elements exist
+console.log('=== Element Check ===');
+console.log('exportBtn:', exportBtn);
+console.log('importBtn:', importBtn);
+console.log('exportModal:', exportModal);
+console.log('importModal:', importModal);
+console.log('exportJsonBtn:', exportJsonBtn);
+console.log('exportQRBtn:', exportQRBtn);
+
 // Camera elements
 const scanCameraBtn = document.getElementById('scanCameraBtn');
 const uploadImageBtn = document.getElementById('uploadImageBtn');
@@ -45,10 +56,6 @@ const stopCameraBtn = document.getElementById('stopCameraBtn');
 const cameraPreview = document.getElementById('cameraPreview');
 const qrVideo = document.getElementById('qrVideo');
 const qrCanvas = document.getElementById('qrCanvas');
-
-// Camera stream
-let cameraStream = null;
-let scanningInterval = null;
 
 // ============================================
 // INITIALIZATION
@@ -358,8 +365,537 @@ function exportToExcel() {
 }
 
 // ============================================
-// QR CODE SYNC FUNCTIONS
+// JSON EXPORT/IMPORT FUNCTIONS
 // ============================================
+
+/**
+ * Export expenses as JSON file
+ */
+function exportToJSON() {
+    console.log('Export JSON clicked!');
+    
+    if (expenses.length === 0) {
+        showError('No expenses to export');
+        return;
+    }
+
+    // Create JSON data with metadata
+    const exportData = {
+        version: "1.0",
+        exportDate: new Date().toISOString(),
+        totalExpenses: expenses.length,
+        expenses: expenses
+    };
+
+    // Convert to JSON string with pretty formatting
+    const jsonString = JSON.stringify(exportData, null, 2);
+
+    // Create blob
+    const blob = new Blob([jsonString], { type: 'application/json' });
+    
+    // Generate filename
+    const today = new Date();
+    const filename = `Expenses_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.json`;
+    
+    // Create download link
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    link.style.display = 'none';
+    
+    document.body.appendChild(link);
+    link.click();
+    
+    // Cleanup
+    setTimeout(() => {
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(url);
+    }, 100);
+    
+    console.log(`✅ Exported ${expenses.length} expenses to ${filename}`);
+}
+
+/**
+ * Open import JSON modal
+ */
+function openImportJsonModal() {
+    importJsonModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+    importJsonStatus.style.display = 'none';
+    jsonFileInput.value = '';
+}
+
+/**
+ * Process imported JSON file
+ */
+function processJsonFile(file) {
+    console.log('=== JSON Import Started ===');
+    console.log('File:', file);
+    
+    if (!file) {
+        showJsonImportError('No file selected');
+        return;
+    }
+    
+    if (!file.name.endsWith('.json')) {
+        showJsonImportError('Please select a valid JSON file');
+        return;
+    }
+
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        try {
+            const jsonData = JSON.parse(e.target.result);
+            
+            console.log('JSON parsed successfully');
+            console.log('Data:', jsonData);
+            
+            // Validate structure
+            let importedExpenses;
+            
+            if (jsonData.version && jsonData.expenses) {
+                // New format with metadata
+                importedExpenses = jsonData.expenses;
+                console.log(`Import file v${jsonData.version}, exported on ${jsonData.exportDate}`);
+            } else if (Array.isArray(jsonData)) {
+                // Old format - direct array
+                importedExpenses = jsonData;
+            } else {
+                throw new Error('Invalid JSON structure');
+            }
+            
+            // Validate expenses array
+            if (!Array.isArray(importedExpenses) || importedExpenses.length === 0) {
+                throw new Error('No expenses found in file');
+            }
+            
+            console.log(`Found ${importedExpenses.length} expenses`);
+            
+            // Confirm import
+            const confirmMsg = `Found ${importedExpenses.length} expenses.\n\nImport and merge with existing data?`;
+            if (confirm(confirmMsg)) {
+                // Merge with existing (avoid duplicates by ID)
+                const existingIds = new Set(expenses.map(e => e.id));
+                const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+                
+                expenses = [...expenses, ...newExpenses];
+                saveExpenses();
+                renderExpenses();
+                updateSummary();
+                
+                showJsonImportSuccess(`✅ Successfully imported ${newExpenses.length} new expenses!`);
+                
+                setTimeout(() => {
+                    importJsonModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                }, 2000);
+            }
+            
+        } catch (error) {
+            console.error('JSON parse error:', error);
+            showJsonImportError(`Invalid JSON file: ${error.message}`);
+        }
+    };
+    
+    reader.onerror = function() {
+        console.error('File read error');
+        showJsonImportError('Failed to read file. Please try again.');
+    };
+    
+    reader.readAsText(file);
+}
+
+/**
+ * Show JSON import success message
+ */
+function showJsonImportSuccess(message) {
+    importJsonStatus.textContent = message;
+    importJsonStatus.style.display = 'block';
+    importJsonStatus.style.background = '#d4edda';
+    importJsonStatus.style.color = '#155724';
+    importJsonStatus.style.border = '1px solid #c3e6cb';
+    importJsonStatus.style.padding = '15px';
+    importJsonStatus.style.borderRadius = '8px';
+    importJsonStatus.style.marginTop = '15px';
+}
+
+// ============================================
+// QR SCANNER FUNCTIONS
+// ============================================
+
+/**
+ * Start QR scanner with camera
+ */
+async function startQRScanner() {
+    try {
+        // Show scanner modal
+        qrScannerModal.style.display = 'block';
+        document.body.classList.add('modal-open');
+        qrScanStatus.style.display = 'none';
+        
+        // Request camera access
+        cameraStream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: 'environment' } 
+        });
+        
+        qrVideo.srcObject = cameraStream;
+        
+        // Start scanning
+        scanningInterval = setInterval(scanQRFromVideo, 300);
+        
+        console.log('✅ QR Scanner started');
+    } catch (error) {
+        console.error('Camera error:', error);
+        showQRScanError('Camera access denied. Please allow camera permission.');
+    }
+}
+
+/**
+ * Stop QR scanner
+ */
+function stopQRScanner() {
+    if (cameraStream) {
+        cameraStream.getTracks().forEach(track => track.stop());
+        cameraStream = null;
+    }
+    
+    if (scanningInterval) {
+        clearInterval(scanningInterval);
+        scanningInterval = null;
+    }
+    
+    qrVideo.srcObject = null;
+    qrScannerModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    
+    console.log('QR Scanner stopped');
+}
+
+/**
+ * Scan QR code from video feed
+ */
+function scanQRFromVideo() {
+    if (qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
+        const ctx = qrCanvas.getContext('2d', { willReadFrequently: true });
+        
+        qrCanvas.width = qrVideo.videoWidth;
+        qrCanvas.height = qrVideo.videoHeight;
+        
+        ctx.drawImage(qrVideo, 0, 0, qrCanvas.width, qrCanvas.height);
+        
+        const imageData = ctx.getImageData(0, 0, qrCanvas.width, qrCanvas.height);
+        const code = jsQR(imageData.data, imageData.width, imageData.height);
+        
+        if (code) {
+            console.log('✅ QR code detected:', code.data);
+            
+            stopQRScanner();
+            
+            // Check if it's a tmpfiles.org link
+            if (code.data.includes('tmpfiles.org')) {
+                downloadAndImportFromURL(code.data);
+            } else {
+                showQRScanError('Invalid QR code. Please scan a QR code generated by this app.');
+            }
+        }
+    }
+}
+
+/**
+ * Download and import JSON from URL
+ */
+async function downloadAndImportFromURL(url) {
+    try {
+        console.log('=== Download from URL ===');
+        console.log('URL:', url);
+        
+        // Show loading
+        showQRScanSuccess('Downloading data...');
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            mode: 'cors',
+            cache: 'no-cache'
+        });
+        
+        console.log('Response status:', response.status);
+        console.log('Response OK:', response.ok);
+        
+        if (!response.ok) {
+            throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+        }
+        
+        const contentType = response.headers.get('content-type');
+        console.log('Content-Type:', contentType);
+        
+        const jsonData = await response.json();
+        console.log('Data received:', jsonData);
+        
+        // Process imported data
+        let importedExpenses;
+        if (jsonData.version && jsonData.expenses) {
+            importedExpenses = jsonData.expenses;
+        } else if (Array.isArray(jsonData)) {
+            importedExpenses = jsonData;
+        } else {
+            throw new Error('Invalid data format');
+        }
+        
+        console.log(`✅ Found ${importedExpenses.length} expenses`);
+        
+        const confirmMsg = `Found ${importedExpenses.length} expenses from shared link.\n\nImport and merge?`;
+        if (confirm(confirmMsg)) {
+            const existingIds = new Set(expenses.map(e => e.id));
+            const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+            
+            expenses = [...expenses, ...newExpenses];
+            saveExpenses();
+            renderExpenses();
+            updateSummary();
+            
+            alert(`✅ Successfully imported ${newExpenses.length} expenses!`);
+        }
+        
+    } catch (error) {
+        console.error('❌ Download error:', error);
+        console.error('Error name:', error.name);
+        console.error('Error message:', error.message);
+        
+        let errorMsg = 'Failed to import from QR code.\n\n';
+        
+        if (error.message.includes('Failed to fetch')) {
+            errorMsg += 'The link may have expired or the file was already downloaded.\n\n';
+            errorMsg += 'Please generate a new QR code and try again.';
+        } else {
+            errorMsg += `Error: ${error.message}`;
+        }
+        
+        alert(`❌ ${errorMsg}`);
+    }
+}
+
+/**
+ * Show QR scan error
+ */
+function showQRScanError(message) {
+    qrScanStatus.textContent = message;
+    qrScanStatus.className = 'error';
+}
+
+/**
+ * Show QR scan success
+ */
+function showQRScanSuccess(message) {
+    qrScanStatus.textContent = message;
+    qrScanStatus.className = 'success';
+}
+
+// ============================================
+// SHARE VIA QR CODE (FILE.IO)
+// ============================================
+
+/**
+ * Generate shareable QR code with temporary link
+ */
+async function shareViaQR() {
+    console.log('Share via QR clicked');
+    
+    if (expenses.length === 0) {
+        showError('No expenses to share');
+        return;
+    }
+    
+    // Show modal with loading state
+    shareQRModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+    qrLoadingContainer.style.display = 'block';
+    qrResultContainer.style.display = 'none';
+    qrModalTitle.textContent = 'Generating Share Link...';
+    qrModalDesc.textContent = 'Please wait while we create a secure temporary link';
+    
+    try {
+        // Create JSON data
+        const exportData = {
+            version: "1.0",
+            exportDate: new Date().toISOString(),
+            totalExpenses: expenses.length,
+            expenses: expenses
+        };
+        
+        const jsonString = JSON.stringify(exportData);
+        
+        console.log(`Uploading ${expenses.length} expenses (${jsonString.length} bytes)...`);
+        
+        // Use tmpfiles.org (allows CORS, 1 hour expiry)
+        const formData = new FormData();
+        formData.append('file', new Blob([jsonString], { type: 'application/json' }), 'expenses.json');
+        
+        console.log('Uploading to tmpfiles.org...');
+        
+        const response = await fetch('https://tmpfiles.org/api/v1/upload', {
+            method: 'POST',
+            body: formData
+        });
+        
+        console.log('Response status:', response.status);
+        
+        if (!response.ok) {
+            throw new Error(`Upload failed with status: ${response.status}`);
+        }
+        
+        const result = await response.json();
+        console.log('tmpfiles.org response:', result);
+        
+        if (result.status !== 'success' || !result.data || !result.data.url) {
+            throw new Error('Failed to get download link from response');
+        }
+        
+        // tmpfiles.org returns URLs like: https://tmpfiles.org/12345/expenses.json
+        // We need to convert to download URL: https://tmpfiles.org/dl/12345/expenses.json
+        let downloadLink = result.data.url.replace('tmpfiles.org/', 'tmpfiles.org/dl/');
+        
+        console.log('✅ Temporary link created:', downloadLink);
+        console.log('⏰ Link expires in 1 hour');
+        
+        // Generate QR code
+        qrCodeDisplay.innerHTML = '';
+        new QRCode(qrCodeDisplay, {
+            text: downloadLink,
+            width: 256,
+            height: 256,
+            colorDark: '#000000',
+            colorLight: '#ffffff',
+            correctLevel: QRCode.CorrectLevel.M
+        });
+        
+        // Update modal
+        qrLoadingContainer.style.display = 'none';
+        qrResultContainer.style.display = 'block';
+        qrModalTitle.textContent = '✅ Share Link Created!';
+        qrModalDesc.innerHTML = `
+            <p>Scan this QR code on another device to import expenses</p>
+            <p style="color: #6c757d; font-size: 0.85rem; margin-top: 10px;">
+                <strong>Note:</strong> Link expires in 1 hour and can be used multiple times.
+            </p>
+        `;
+        
+        // Update security notice
+        const securityNotice = qrResultContainer.querySelector('div[style*="background: #fff3cd"]');
+        if (securityNotice) {
+            securityNotice.innerHTML = `
+                <strong>⚠️ Security Notice:</strong>
+                <ul style="margin: 10px 0 0 20px; font-size: 0.9rem;">
+                    <li>Link expires in <strong>1 hour</strong></li>
+                    <li>Can be used <strong>multiple times</strong></li>
+                    <li>Scan this QR on another device to import</li>
+                </ul>
+            `;
+        }
+        
+        // Store link
+        window.currentShareLink = downloadLink;
+        
+    } catch (error) {
+        console.error('❌ Share QR error:', error);
+        console.error('Error details:', error.message);
+        
+        qrLoadingContainer.style.display = 'none';
+        qrModalTitle.textContent = '❌ Upload Failed';
+        qrModalDesc.innerHTML = `
+            <p style="color: #721c24; margin-bottom: 10px;">Error: ${error.message}</p>
+            <p style="color: #6c757d; font-size: 0.9rem;">
+                The file sharing service might be unavailable. 
+                Please use the <strong>"Export"</strong> button instead and share the JSON file manually via WhatsApp, Email, or Nearby Share.
+            </p>
+        `;
+    }
+}
+
+/**
+ * Download QR code as image
+ */
+function downloadShareQR() {
+    const canvas = qrCodeDisplay.querySelector('canvas');
+    if (!canvas) return;
+    
+    const link = document.createElement('a');
+    const today = new Date();
+    const filename = `Share_QR_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.png`;
+    
+    link.download = filename;
+    link.href = canvas.toDataURL();
+    link.click();
+    
+    console.log('QR code downloaded');
+}
+
+/**
+ * Auto-import from URL (when QR is scanned)
+ */
+async function checkForAutoImport() {
+    // Check if URL has file.io link in query params
+    const urlParams = new URLSearchParams(window.location.search);
+    const importUrl = urlParams.get('import');
+    
+    if (importUrl && importUrl.includes('file.io')) {
+        console.log('Auto-import detected:', importUrl);
+        
+        try {
+            const response = await fetch(importUrl);
+            if (!response.ok) {
+                throw new Error('Failed to download file');
+            }
+            
+            const jsonData = await response.json();
+            
+            // Process the imported data
+            let importedExpenses;
+            if (jsonData.version && jsonData.expenses) {
+                importedExpenses = jsonData.expenses;
+            } else if (Array.isArray(jsonData)) {
+                importedExpenses = jsonData;
+            } else {
+                throw new Error('Invalid data format');
+            }
+            
+            const confirmMsg = `Found ${importedExpenses.length} expenses from shared link.\n\nImport and merge?`;
+            if (confirm(confirmMsg)) {
+                const existingIds = new Set(expenses.map(e => e.id));
+                const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+                
+                expenses = [...expenses, ...newExpenses];
+                saveExpenses();
+                renderExpenses();
+                updateSummary();
+                
+                alert(`✅ Successfully imported ${newExpenses.length} expenses!`);
+            }
+            
+            // Clean URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+            
+        } catch (error) {
+            console.error('Auto-import error:', error);
+            alert('❌ Failed to import from link. The link may have expired or been used already.');
+        }
+    }
+}
+
+/**
+ * Show JSON import error message
+ */
+function showJsonImportError(message) {
+    importJsonStatus.textContent = message;
+    importJsonStatus.style.display = 'block';
+    importJsonStatus.style.background = '#f8d7da';
+    importJsonStatus.style.color = '#721c24';
+    importJsonStatus.style.border = '1px solid #f5c6cb';
+    importJsonStatus.style.padding = '15px';
+    importJsonStatus.style.borderRadius = '8px';
+    importJsonStatus.style.marginTop = '15px';
+}
 
 /**
  * Generate QR Code with all expense data
@@ -615,7 +1151,7 @@ function stopCamera() {
 function scanQRFromCamera() {
     if (qrVideo.readyState === qrVideo.HAVE_ENOUGH_DATA) {
         const canvas = qrCanvas;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         
         canvas.width = qrVideo.videoWidth;
         canvas.height = qrVideo.videoHeight;
@@ -947,16 +1483,53 @@ function updateSummary() {
 addBtn.addEventListener('click', addExpense);
 
 // Export to Excel button click
-exportBtn.addEventListener('click', exportToExcel);
+exportExcelBtn.addEventListener('click', exportToExcel);
 
-// QR Code buttons
-generateQRBtn.addEventListener('click', generateQRCode);
-importQRBtn.addEventListener('click', openImportModal);
-downloadQRBtn.addEventListener('click', downloadQRCode);
+// Export button - open modal
+exportBtn.addEventListener('click', () => {
+    exportModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+});
 
-// Modal close buttons
-closeModal.addEventListener('click', () => {
-    qrModal.style.display = 'none';
+// Export JSON option
+exportJsonBtn.addEventListener('click', () => {
+    exportModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    exportToJSON();
+});
+
+// Export QR option
+exportQRBtn.addEventListener('click', () => {
+    exportModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    shareViaQR();
+});
+
+// Import button - open modal
+importBtn.addEventListener('click', () => {
+    importModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+    importJsonStatus.style.display = 'none';
+});
+
+// Import file option
+importFileBtn.addEventListener('click', () => {
+    jsonFileInput.click();
+});
+
+// Import QR option
+importQRBtn.addEventListener('click', () => {
+    importModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+    startQRScanner();
+});
+
+// Download QR code button
+downloadQRBtn.addEventListener('click', downloadShareQR);
+
+// Close modals
+closeExportModal.addEventListener('click', () => {
+    exportModal.style.display = 'none';
     document.body.classList.remove('modal-open');
 });
 
@@ -965,31 +1538,40 @@ closeImportModal.addEventListener('click', () => {
     document.body.classList.remove('modal-open');
 });
 
+closeShareQRModal.addEventListener('click', () => {
+    shareQRModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+});
+
+closeQRScannerModal.addEventListener('click', stopQRScanner);
+stopScanBtn.addEventListener('click', stopQRScanner);
+
+// JSON file input change
+jsonFileInput.addEventListener('change', (e) => {
+    console.log('JSON file selected');
+    if (e.target.files && e.target.files[0]) {
+        processJsonFile(e.target.files[0]);
+    }
+});
+
 // Close modal when clicking outside
 window.addEventListener('click', (e) => {
-    if (e.target === qrModal) {
-        qrModal.style.display = 'none';
+    if (e.target === exportModal) {
+        exportModal.style.display = 'none';
         document.body.classList.remove('modal-open');
     }
     if (e.target === importModal) {
         importModal.style.display = 'none';
         document.body.classList.remove('modal-open');
     }
-});
-
-// QR file input change
-qrFileInput.addEventListener('change', (e) => {
-    if (e.target.files && e.target.files[0]) {
-        processQRImage(e.target.files[0]);
+    if (e.target === shareQRModal) {
+        shareQRModal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+    }
+    if (e.target === qrScannerModal) {
+        stopQRScanner();
     }
 });
-
-// Camera scan buttons
-scanCameraBtn.addEventListener('click', startCamera);
-uploadImageBtn.addEventListener('click', () => {
-    qrFileInput.click();
-});
-stopCameraBtn.addEventListener('click', stopCamera);
 
 // Form overlay handlers (mobile)
 fabBtn.addEventListener('click', openAddForm);
@@ -1016,3 +1598,6 @@ filterCategory.addEventListener('change', renderExpenses);
 // ============================================
 // Load expenses from LocalStorage when page loads
 loadExpenses();
+
+// Check for auto-import from shared link
+checkForAutoImport();

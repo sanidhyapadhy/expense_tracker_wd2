@@ -86,9 +86,9 @@
 
                 <div class="button-grid">
                     <button class="btn btn-primary" id="addBtn" type="button">Add</button>
-                    <button class="btn btn-success" id="exportBtn" type="button">Excel</button>
-                    <button class="btn btn-info" id="generateQRBtn" type="button">QR</button>
-                    <button class="btn btn-warning" id="importQRBtn" type="button">Import</button>
+                    <button class="btn btn-success" id="exportExcelBtn" type="button">Excel</button>
+                    <button class="btn btn-info" id="exportBtn" type="button">Export</button>
+                    <button class="btn btn-warning" id="importBtn" type="button">Import</button>
                     <button class="btn btn-danger" id="clearAllBtn" type="button">Clear All</button>
                 </div>
             </div>
@@ -102,50 +102,96 @@
         <!-- Form Overlay Background (Mobile Only) -->
         <div class="form-overlay" id="formOverlay"></div>
 
-        <!-- QR Code Modal -->
-        <div class="modal" id="qrModal">
+        <!-- Export Modal -->
+        <div class="modal" id="exportModal">
             <div class="modal-content">
-                <span class="close" id="closeModal">&times;</span>
-                <h2>Scan QR Code</h2>
-                <p>Scan on another device and click "Import from QR"</p>
-                <div id="qrCodeContainer"></div>
+                <span class="close" id="closeExportModal">&times;</span>
+                <h2>Export Expenses</h2>
+                <p>Choose how you want to export your data</p>
                 
-                <!-- Progress Indicator -->
-                <div id="qrProgress" class="qr-progress"></div>
-                
-                <!-- Navigation Buttons -->
-                <div class="qr-navigation">
-                    <button class="btn btn-secondary" id="prevQRBtn" type="button" onclick="prevQRPage()">← Previous</button>
-                    <button class="btn btn-primary" id="downloadQRBtn" type="button">Download Current</button>
-                    <button class="btn btn-secondary" id="nextQRBtn" type="button" onclick="nextQRPage()">Next →</button>
+                <div class="export-import-options">
+                    <button class="option-card" id="exportJsonBtn" type="button">
+                        <div class="option-icon">📥</div>
+                        <div class="option-title">Download JSON</div>
+                        <div class="option-desc">Save file to your device</div>
+                    </button>
+                    
+                    <button class="option-card" id="exportQRBtn" type="button">
+                        <div class="option-icon">📱</div>
+                        <div class="option-title">Share via QR</div>
+                        <div class="option-desc">Generate shareable QR code</div>
+                    </button>
                 </div>
             </div>
         </div>
 
-        <!-- Import QR Modal -->
+        <!-- Import Modal -->
         <div class="modal" id="importModal">
             <div class="modal-content">
                 <span class="close" id="closeImportModal">&times;</span>
-                <h2>Import Data from QR Code</h2>
-                <p>Scan with camera or upload QR code image</p>
+                <h2>Import Expenses</h2>
+                <p>Choose how you want to import your data</p>
                 
-                <!-- Import Options -->
-                <div class="import-options">
-                    <button class="btn btn-primary" id="scanCameraBtn" type="button">📷 Scan with Camera</button>
-                    <button class="btn btn-success" id="uploadImageBtn" type="button">🖼️ Upload Image</button>
+                <div class="export-import-options">
+                    <button class="option-card" id="importFileBtn" type="button">
+                        <div class="option-icon">📄</div>
+                        <div class="option-title">Upload JSON File</div>
+                        <div class="option-desc">Select file from device</div>
+                    </button>
+                    
+                    <button class="option-card" id="importQRBtn" type="button">
+                        <div class="option-icon">📷</div>
+                        <div class="option-title">Scan QR Code</div>
+                        <div class="option-desc">Scan with camera</div>
+                    </button>
                 </div>
                 
-                <!-- Camera Preview (hidden by default) -->
-                <div id="cameraPreview" style="display: none;">
-                    <video id="qrVideo" autoplay playsinline></video>
-                    <canvas id="qrCanvas" style="display: none;"></canvas>
-                    <button class="btn btn-danger" id="stopCameraBtn" type="button">Stop Camera</button>
+                <input type="file" id="jsonFileInput" accept=".json,application/json" style="display: none;">
+                <div id="importJsonStatus"></div>
+            </div>
+        </div>
+
+        <!-- QR Share Modal -->
+        <div class="modal" id="shareQRModal">
+            <div class="modal-content">
+                <span class="close" id="closeShareQRModal">&times;</span>
+                <h2 id="qrModalTitle">Generating Share Link...</h2>
+                <p id="qrModalDesc">Please wait while we create a secure temporary link</p>
+                
+                <div id="qrLoadingContainer" style="text-align: center; padding: 40px;">
+                    <div class="loader"></div>
+                    <p style="margin-top: 20px; color: #6c757d;">Uploading your data...</p>
                 </div>
                 
-                <!-- File Input (hidden) -->
-                <input type="file" id="qrFileInput" accept="image/*" style="display: none;">
+                <div id="qrResultContainer" style="display: none;">
+                    <div id="qrCodeDisplay" style="text-align: center; margin: 20px 0;"></div>
+                    <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                        <strong>⚠️ Security Notice:</strong>
+                        <ul style="margin: 10px 0 0 20px; font-size: 0.9rem;">
+                            <li>Link expires in <strong>1 hour</strong></li>
+                            <li>Can be used <strong>multiple times</strong></li>
+                            <li>Scan this QR on another device to import</li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-primary" id="downloadQRBtn" type="button" style="width: 100%; margin-top: 10px;">Download QR Code</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- QR Scanner Modal -->
+        <div class="modal" id="qrScannerModal">
+            <div class="modal-content">
+                <span class="close" id="closeQRScannerModal">&times;</span>
+                <h2>Scan QR Code</h2>
+                <p>Point your camera at the QR code</p>
                 
-                <div id="importStatus"></div>
+                <div id="qrScannerContainer">
+                    <video id="qrVideo" autoplay playsinline style="width: 100%; max-width: 400px; border-radius: 10px; border: 2px solid #667eea;"></video>
+                    <canvas id="qrCanvas" style="display: none;" willReadFrequently="true"></canvas>
+                </div>
+                
+                <button class="btn btn-danger" id="stopScanBtn" type="button" style="width: 100%; margin-top: 15px;">Stop Camera</button>
+                <div id="qrScanStatus" style="margin-top: 15px;"></div>
             </div>
         </div>
     </div>
