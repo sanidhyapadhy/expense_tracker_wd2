@@ -80,6 +80,16 @@ function loadExpenses() {
     if (stored) {
         try {
             expenses = JSON.parse(stored);
+            // Backfill seq for any old expenses that don't have it
+            // Assign based on their current array position (already in user's preferred order)
+            let needsBackfill = expenses.some(e => e.seq === undefined);
+            if (needsBackfill) {
+                expenses = expenses.map((e, i) => ({
+                    ...e,
+                    seq: e.seq !== undefined ? e.seq : (expenses.length - i)
+                }));
+            }
+            expenses.sort((a, b) => (b.seq || 0) - (a.seq || 0));
         } catch (error) {
             console.error('Error loading expenses:', error);
             expenses = [];
@@ -175,20 +185,34 @@ function validateInput() {
  * Add new expense to the list
  * Validates input, creates expense object, and updates UI
  */
+/**
+ * Backfill seq numbers on a list of imported expenses that may not have seq
+ * Slots them above current max so they don't collide with existing entries
+ */
+function backfillSeq(importedExpenses) {
+    const currentMaxSeq = expenses.length > 0 ? Math.max(...expenses.map(e => e.seq || 0)) : 0;
+    return importedExpenses.map((e, i) => ({
+        ...e,
+        seq: e.seq !== undefined ? e.seq : (currentMaxSeq + importedExpenses.length - i)
+    }));
+}
+
 function addExpense() {
     // Validate all inputs first
     if (!validateInput()) return;
 
-    // Create expense object
+    // Create expense object — seq is max existing seq + 1
+    const maxSeq = expenses.length > 0 ? Math.max(...expenses.map(e => e.seq || 0)) : 0;
     const expense = {
         id: Date.now(), // Unique ID based on timestamp
+        seq: maxSeq + 1,
         amount: parseFloat(amountInput.value),
         description: descriptionInput.value.trim(),
         category: categorySelect.value,
         date: dateInput.value
     };
 
-    // Add to beginning of array (newest first)
+    // Add to beginning of array
     expenses.unshift(expense);
     
     // Save to LocalStorage
@@ -482,20 +506,20 @@ function processJsonFile(file) {
             const confirmMsg = `Found ${importedExpenses.length} expenses.\n\nImport and merge with existing data?`;
             if (confirm(confirmMsg)) {
                 // Merge with existing (avoid duplicates by ID)
+                importedExpenses = backfillSeq(importedExpenses);
                 const existingIds = new Set(expenses.map(e => e.id));
                 const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
                 
-                expenses = [...expenses, ...newExpenses];
+                expenses = [...expenses, ...newExpenses].sort((a, b) => (b.seq || 0) - (a.seq || 0));
                 saveExpenses();
-                renderExpenses();
-                updateSummary();
-                
                 showJsonImportSuccess(`✅ Successfully imported ${newExpenses.length} new expenses!`);
-                
+
                 setTimeout(() => {
                     importModal.style.display = 'none';
                     document.body.classList.remove('modal-open');
-                }, 2000);
+                    renderExpenses();
+                    updateSummary();
+                }, 1500);
             }
             
         } catch (error) {
@@ -683,10 +707,11 @@ async function downloadAndImportFromURL(url) {
         
         const confirmMsg = `Found ${importedExpenses.length} expenses from shared link.\n\nImport and merge?`;
         if (confirm(confirmMsg)) {
-            const existingIds = new Set(expenses.map(e => e.id));
+            importedExpenses = backfillSeq(importedExpenses);
+                const existingIds = new Set(expenses.map(e => e.id));
             const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
             
-            expenses = [...expenses, ...newExpenses];
+            expenses = [...expenses, ...newExpenses].sort((a, b) => (b.seq || 0) - (a.seq || 0));
             saveExpenses();
             renderExpenses();
             updateSummary();
@@ -914,13 +939,12 @@ async function connectToPeerAndReceive(peerId) {
                     throw new Error('Invalid data format received');
                 }
 
+                importedExpenses = backfillSeq(importedExpenses);
                 const existingIds = new Set(expenses.map(e => e.id));
                 const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
 
-                expenses = [...expenses, ...newExpenses];
+                expenses = [...expenses, ...newExpenses].sort((a, b) => (b.seq || 0) - (a.seq || 0));
                 saveExpenses();
-                renderExpenses();
-                updateSummary();
 
                 importStatus.style.background = '#d4edda';
                 importStatus.style.color = '#155724';
@@ -930,10 +954,14 @@ async function connectToPeerAndReceive(peerId) {
                 receiverPeer.destroy();
                 receiverPeer = null;
 
+                // Close modal first, THEN re-render so the list
+                // is not painted while body is position:fixed
                 setTimeout(() => {
                     importModal.style.display = 'none';
                     document.body.classList.remove('modal-open');
-                }, 2000);
+                    renderExpenses();
+                    updateSummary();
+                }, 1500);
 
             } catch (err) {
                 console.error('Data parse error:', err);
@@ -994,10 +1022,11 @@ async function checkForAutoImport() {
             
             const confirmMsg = `Found ${importedExpenses.length} expenses from shared link.\n\nImport and merge?`;
             if (confirm(confirmMsg)) {
+                importedExpenses = backfillSeq(importedExpenses);
                 const existingIds = new Set(expenses.map(e => e.id));
                 const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
                 
-                expenses = [...expenses, ...newExpenses];
+                expenses = [...expenses, ...newExpenses].sort((a, b) => (b.seq || 0) - (a.seq || 0));
                 saveExpenses();
                 renderExpenses();
                 updateSummary();
@@ -1428,23 +1457,23 @@ function handleMultiPageQR(qrData, categoryMap) {
         // Confirm import
         const confirmMsg = `All ${totalPages} QR codes scanned!\n\nFound ${importedExpenses.length} expenses. Import and merge?\n\n⚠️ Descriptions may be truncated to 12 chars.`;
         if (confirm(confirmMsg)) {
-            const existingIds = new Set(expenses.map(e => e.id));
+            importedExpenses = backfillSeq(importedExpenses);
+                const existingIds = new Set(expenses.map(e => e.id));
             const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
             
-            expenses = [...expenses, ...newExpenses];
+            expenses = [...expenses, ...newExpenses].sort((a, b) => (b.seq || 0) - (a.seq || 0));
             saveExpenses();
-            renderExpenses();
-            updateSummary();
-            
             showImportSuccess(`Successfully imported ${newExpenses.length} expenses from ${totalPages} QR codes!`);
-            
+
             // Reset multi-QR state
             window.qrImportPages = {};
-            
+
             setTimeout(() => {
                 importModal.style.display = 'none';
                 document.body.classList.remove('modal-open');
-            }, 3000);
+                renderExpenses();
+                updateSummary();
+            }, 1500);
         } else {
             // User cancelled, reset state
             window.qrImportPages = {};
@@ -1484,20 +1513,20 @@ function handleSingleQR(importedData, categoryMap) {
 
     const confirmMsg = `Found ${importedExpenses.length} expenses. Import and merge?\n\n⚠️ Descriptions may be truncated to 12 chars.`;
     if (confirm(confirmMsg)) {
-        const existingIds = new Set(expenses.map(e => e.id));
+        importedExpenses = backfillSeq(importedExpenses);
+                const existingIds = new Set(expenses.map(e => e.id));
         const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
         
-        expenses = [...expenses, ...newExpenses];
+        expenses = [...expenses, ...newExpenses].sort((a, b) => (b.seq || 0) - (a.seq || 0));
         saveExpenses();
-        renderExpenses();
-        updateSummary();
-        
         showImportSuccess(`Imported ${newExpenses.length} new expenses!`);
-        
+
         setTimeout(() => {
             importModal.style.display = 'none';
             document.body.classList.remove('modal-open');
-        }, 2000);
+            renderExpenses();
+            updateSummary();
+        }, 1500);
     }
 }
 
