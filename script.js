@@ -294,7 +294,8 @@ function exportToExcel() {
     
     // Add expense data
     expenses.forEach(expense => {
-        const categoryName = categorySelect.querySelector(`option[value="${expense.category}"]`).textContent;
+        const categoryOption = categorySelect.querySelector(`option[value="${expense.category}"]`);
+        const categoryName = categoryOption ? categoryOption.textContent : '📦 Other';
         rows.push([
             formatDate(expense.date),
             expense.description,
@@ -1550,16 +1551,17 @@ function renderExpenses() {
 
     // Render each expense as HTML
     expenseList.innerHTML = filtered.map(expense => {
-        // Get category display name from select option
-        const categoryName = categorySelect.querySelector(`option[value="${expense.category}"]`).textContent;
-        
+        // Safely get category display name — fallback if category is unrecognised
+        const categoryOption = categorySelect.querySelector(`option[value="${expense.category}"]`);
+        const categoryName = categoryOption ? categoryOption.textContent : '📦 Other';
+
         return `
             <div class="expense-item">
                 <div class="expense-details">
                     <div class="expense-amount">₹${expense.amount.toFixed(2)}</div>
                     <div class="expense-description">${expense.description}</div>
                     <div class="expense-meta">
-                        <span class="category-badge category-${expense.category}">
+                        <span class="category-badge category-${expense.category || 'other'}">
                             ${categoryName}
                         </span>
                         <span>📅 ${formatDate(expense.date)}</span>
@@ -1600,7 +1602,8 @@ function updateSummary() {
         .sort((a, b) => b[1] - a[1])[0];
 
     if (highest) {
-        const categoryName = categorySelect.querySelector(`option[value="${highest[0]}"]`).textContent;
+        const categoryOption = categorySelect.querySelector(`option[value="${highest[0]}"]`);
+        const categoryName = categoryOption ? categoryOption.textContent : '📦 Other';
         // Extract just the emoji from category name
         highestCategory.textContent = categoryName.split(' ')[0];
     }
