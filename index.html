@@ -131,21 +131,35 @@
                 <span class="close" id="closeImportModal">&times;</span>
                 <h2>Import Expenses</h2>
                 <p>Choose how you want to import your data</p>
-                
+
                 <div class="export-import-options">
                     <button class="option-card" id="importFileBtn" type="button">
                         <div class="option-icon">📄</div>
                         <div class="option-title">Upload JSON File</div>
                         <div class="option-desc">Select file from device</div>
                     </button>
-                    
+
                     <button class="option-card" id="importQRBtn" type="button">
                         <div class="option-icon">📷</div>
                         <div class="option-title">Scan QR Code</div>
-                        <div class="option-desc">Scan with camera</div>
+                        <div class="option-desc">Receive via WebRTC</div>
+                    </button>
+
+                    <button class="option-card" id="importCodeBtn" type="button">
+                        <div class="option-icon">🔢</div>
+                        <div class="option-title">Enter Code</div>
+                        <div class="option-desc">Type the 6-digit code</div>
                     </button>
                 </div>
-                
+
+                <!-- Code entry panel (hidden by default) -->
+                <div id="codeEntryPanel" style="display: none; margin-top: 15px;">
+                    <input type="text" id="peerCodeInput" maxlength="6"
+                        placeholder="Enter 6-digit code"
+                        style="width: 100%; padding: 14px; font-size: 1.5rem; letter-spacing: 8px; text-align: center; border: 2px solid #dee2e6; border-radius: 10px;">
+                    <button class="btn btn-primary" id="connectWithCodeBtn" type="button" style="width: 100%; margin-top: 10px;">Connect</button>
+                </div>
+
                 <input type="file" id="jsonFileInput" accept=".json,application/json" style="display: none;">
                 <div id="importJsonStatus"></div>
             </div>
@@ -155,25 +169,27 @@
         <div class="modal" id="shareQRModal">
             <div class="modal-content">
                 <span class="close" id="closeShareQRModal">&times;</span>
-                <h2 id="qrModalTitle">Generating Share Link...</h2>
-                <p id="qrModalDesc">Please wait while we create a secure temporary link</p>
-                
+                <h2 id="qrModalTitle">Preparing Share...</h2>
+                <p id="qrModalDesc">Setting up secure connection</p>
+
                 <div id="qrLoadingContainer" style="text-align: center; padding: 40px;">
                     <div class="loader"></div>
-                    <p style="margin-top: 20px; color: #6c757d;">Uploading your data...</p>
+                    <p style="margin-top: 20px; color: #6c757d;">Connecting to relay server...</p>
                 </div>
-                
+
                 <div id="qrResultContainer" style="display: none;">
                     <div id="qrCodeDisplay" style="text-align: center; margin: 20px 0;"></div>
-                    <div style="background: #fff3cd; border: 1px solid #ffc107; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                        <strong>⚠️ Security Notice:</strong>
-                        <ul style="margin: 10px 0 0 20px; font-size: 0.9rem;">
-                            <li>Link expires in <strong>1 hour</strong></li>
-                            <li>Can be used <strong>multiple times</strong></li>
-                            <li>Scan this QR on another device to import</li>
-                        </ul>
+
+                    <div style="text-align: center; margin: 10px 0;">
+                        <p style="font-size: 0.85rem; color: #6c757d; margin-bottom: 6px;">Or enter this code on the other device:</p>
+                        <div id="peerCodeDisplay" style="font-size: 2rem; font-weight: bold; letter-spacing: 8px; color: #667eea; background: #f0f2ff; border-radius: 10px; padding: 12px 20px; display: inline-block;"></div>
                     </div>
-                    <button class="btn btn-primary" id="downloadQRBtn" type="button" style="width: 100%; margin-top: 10px;">Download QR Code</button>
+
+                    <div id="shareStatusBox" style="background: #fff3cd; border: 1px solid #ffc107; padding: 12px 15px; border-radius: 8px; margin: 15px 0; font-size: 0.9rem; text-align: center;">
+                        ⏳ Waiting for other device to connect...
+                    </div>
+
+                    <button class="btn btn-danger" id="cancelShareBtn" type="button" style="width: 100%; margin-top: 5px;">Cancel</button>
                 </div>
             </div>
         </div>
@@ -198,6 +214,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

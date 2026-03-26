@@ -14,8 +14,8 @@ const categorySelect = document.getElementById('category');
 const dateInput = document.getElementById('date');
 const addBtn = document.getElementById('addBtn');
 const exportBtn = document.getElementById('exportBtn');
-const generateQRBtn = document.getElementById('generateQRBtn');
-const importQRBtn = document.getElementById('importQRBtn');
+const exportExcelBtn = document.getElementById('exportExcelBtn');
+const importBtn = document.getElementById('importBtn');
 const clearAllBtn = document.getElementById('clearAllBtn');
 const expenseList = document.getElementById('expenseList');
 const filterCategory = document.getElementById('filterCategory');
@@ -24,38 +24,41 @@ const totalAmount = document.getElementById('totalAmount');
 const totalCount = document.getElementById('totalCount');
 const highestCategory = document.getElementById('highestCategory');
 
-// Modal elements
-const qrModal = document.getElementById('qrModal');
+// Export modal elements
+const exportModal = document.getElementById('exportModal');
+const closeExportModal = document.getElementById('closeExportModal');
+const exportJsonBtn = document.getElementById('exportJsonBtn');
+const exportQRBtn = document.getElementById('exportQRBtn');
+
+// Import modal elements
 const importModal = document.getElementById('importModal');
-const closeModal = document.getElementById('closeModal');
 const closeImportModal = document.getElementById('closeImportModal');
-const qrCodeContainer = document.getElementById('qrCodeContainer');
-const downloadQRBtn = document.getElementById('downloadQRBtn');
-const qrFileInput = document.getElementById('qrFileInput');
-const importStatus = document.getElementById('importStatus');
+const importFileBtn = document.getElementById('importFileBtn');
+const importQRBtn = document.getElementById('importQRBtn');
+const jsonFileInput = document.getElementById('jsonFileInput');
+const importJsonStatus = document.getElementById('importJsonStatus');
+
+// Share QR modal elements
+const shareQRModal = document.getElementById('shareQRModal');
+const closeShareQRModal = document.getElementById('closeShareQRModal');
+const qrLoadingContainer = document.getElementById('qrLoadingContainer');
+const qrResultContainer = document.getElementById('qrResultContainer');
+const qrModalTitle = document.getElementById('qrModalTitle');
+const qrModalDesc = document.getElementById('qrModalDesc');
+const qrCodeDisplay = document.getElementById('qrCodeDisplay');
+// QR Scanner modal elements
+const qrScannerModal = document.getElementById('qrScannerModal');
+const closeQRScannerModal = document.getElementById('closeQRScannerModal');
+const stopScanBtn = document.getElementById('stopScanBtn');
+const qrScanStatus = document.getElementById('qrScanStatus');
+const qrVideo = document.getElementById('qrVideo');
+const qrCanvas = document.getElementById('qrCanvas');
 
 // Form overlay elements (mobile)
 const fabBtn = document.getElementById('fabBtn');
 const formOverlay = document.getElementById('formOverlay');
 const closeForm = document.getElementById('closeForm');
 const addExpenseForm = document.querySelector('.add-expense');
-
-// Debug: Check if critical elements exist
-console.log('=== Element Check ===');
-console.log('exportBtn:', exportBtn);
-console.log('importBtn:', importBtn);
-console.log('exportModal:', exportModal);
-console.log('importModal:', importModal);
-console.log('exportJsonBtn:', exportJsonBtn);
-console.log('exportQRBtn:', exportQRBtn);
-
-// Camera elements
-const scanCameraBtn = document.getElementById('scanCameraBtn');
-const uploadImageBtn = document.getElementById('uploadImageBtn');
-const stopCameraBtn = document.getElementById('stopCameraBtn');
-const cameraPreview = document.getElementById('cameraPreview');
-const qrVideo = document.getElementById('qrVideo');
-const qrCanvas = document.getElementById('qrCanvas');
 
 
 // ============================================
@@ -421,7 +424,7 @@ function exportToJSON() {
  * Open import JSON modal
  */
 function openImportJsonModal() {
-    importJsonModal.style.display = 'block';
+    importModal.style.display = 'block';
     document.body.classList.add('modal-open');
     importJsonStatus.style.display = 'none';
     jsonFileInput.value = '';
@@ -489,7 +492,7 @@ function processJsonFile(file) {
                 showJsonImportSuccess(`✅ Successfully imported ${newExpenses.length} new expenses!`);
                 
                 setTimeout(() => {
-                    importJsonModal.style.display = 'none';
+                    importModal.style.display = 'none';
                     document.body.classList.remove('modal-open');
                 }, 2000);
             }
@@ -568,9 +571,12 @@ async function startQRScanner() {
  */
 function handleNativeQRResult(qrData) {
     console.log('✅ Native QR result:', qrData);
-    
-    // Check if it's a tmpfiles.org link
-    if (qrData.includes('tmpfiles.org')) {
+
+    if (qrData.startsWith('EXPENSE_PEER:')) {
+        const peerId = qrData.replace('EXPENSE_PEER:', '');
+        stopQRScanner();
+        connectToPeerAndReceive(peerId);
+    } else if (qrData.includes('jsonblob.com') || qrData.includes('tmpfiles.org')) {
         downloadAndImportFromURL(qrData);
     } else {
         alert('❌ Invalid QR code. Please scan a QR code generated by this app.');
@@ -618,8 +624,12 @@ function scanQRFromVideo() {
             
             stopQRScanner();
             
-            // Check if it's a tmpfiles.org link
-            if (code.data.includes('tmpfiles.org')) {
+            if (code.data.startsWith('EXPENSE_PEER:')) {
+                const peerId = code.data.replace('EXPENSE_PEER:', '');
+                stopQRScanner();
+                connectToPeerAndReceive(peerId);
+            } else if (code.data.includes('jsonblob.com') || code.data.includes('tmpfiles.org')) {
+                stopQRScanner();
                 downloadAndImportFromURL(code.data);
             } else {
                 showQRScanError('Invalid QR code. Please scan a QR code generated by this app.');
@@ -724,130 +734,233 @@ function showQRScanSuccess(message) {
 /**
  * Generate shareable QR code with temporary link
  */
-async function shareViaQR() {
-    console.log('Share via QR clicked');
-    
-    if (expenses.length === 0) {
-        showError('No expenses to share');
-        return;
-    }
-    
-    // Show modal with loading state
-    shareQRModal.style.display = 'block';
-    document.body.classList.add('modal-open');
-    qrLoadingContainer.style.display = 'block';
-    qrResultContainer.style.display = 'none';
-    qrModalTitle.textContent = 'Generating Share Link...';
-    qrModalDesc.textContent = 'Please wait while we create a secure temporary link';
-    
-    try {
-        // Create JSON data
-        const exportData = {
-            version: "1.0",
-            exportDate: new Date().toISOString(),
-            totalExpenses: expenses.length,
-            expenses: expenses
-        };
-        
-        const jsonString = JSON.stringify(exportData);
-        
-        console.log(`Uploading ${expenses.length} expenses (${jsonString.length} bytes)...`);
-        
-        // Use 0x0.st (simple, no CORS issues, 365 day expiry)
-        const formData = new FormData();
-        formData.append('file', new Blob([jsonString], { type: 'application/json' }), 'expenses.json');
-        
-        console.log('Uploading to 0x0.st...');
-        
-        const response = await fetch('https://0x0.st', {
-            method: 'POST',
-            body: formData
-        });
-        
-        console.log('Response status:', response.status);
-        
-        if (!response.ok) {
-            throw new Error(`Upload failed with status: ${response.status}`);
-        }
-        
-        // 0x0.st returns just the URL as plain text
-        const downloadLink = await response.text();
-        const trimmedLink = downloadLink.trim();
-        
-        console.log('✅ Temporary link created:', trimmedLink);
-        console.log('⏰ Link expires in 365 days');
-        
-        // Generate QR code
-        qrCodeDisplay.innerHTML = '';
-        new QRCode(qrCodeDisplay, {
-            text: trimmedLink,
-            width: 256,
-            height: 256,
-            colorDark: '#000000',
-            colorLight: '#ffffff',
-            correctLevel: QRCode.CorrectLevel.M
-        });
-        
-        // Update modal
-        qrLoadingContainer.style.display = 'none';
-        qrResultContainer.style.display = 'block';
-        qrModalTitle.textContent = '✅ Share Link Created!';
-        qrModalDesc.innerHTML = `
-            <p>Scan this QR code on another device to import expenses</p>
-            <p style="color: #6c757d; font-size: 0.85rem; margin-top: 10px;">
-                <strong>Note:</strong> Link expires in 365 days and can be used unlimited times.
-            </p>
-        `;
-        
-        // Update security notice
-        const securityNotice = qrResultContainer.querySelector('div[style*="background: #fff3cd"]');
-        if (securityNotice) {
-            securityNotice.innerHTML = `
-                <strong>⚠️ Security Notice:</strong>
-                <ul style="margin: 10px 0 0 20px; font-size: 0.9rem;">
-                    <li>Link expires in <strong>365 days</strong></li>
-                    <li>Can be used <strong>unlimited times</strong></li>
-                    <li>Scan this QR on another device to import</li>
-                </ul>
-            `;
-        }
-        
-        // Store link
-        window.currentShareLink = trimmedLink;
-        
-    } catch (error) {
-        console.error('❌ Share QR error:', error);
-        console.error('Error details:', error.message);
-        
-        qrLoadingContainer.style.display = 'none';
-        qrModalTitle.textContent = '❌ Upload Failed';
-        qrModalDesc.innerHTML = `
-            <p style="color: #721c24; margin-bottom: 10px;">Error: ${error.message}</p>
-            <p style="color: #6c757d; font-size: 0.9rem;">
-                The file sharing service might be unavailable. 
-                Please use the <strong>"Export"</strong> button instead and share the JSON file manually via WhatsApp, Email, or Nearby Share.
-            </p>
-        `;
+// ============================================
+// WEBRTC SHARE — PeerJS
+// ============================================
+let senderPeer = null;   // PeerJS instance on export side
+let receiverPeer = null; // PeerJS instance on import side
+
+/**
+ * Generate a human-friendly 6-digit numeric code from a PeerJS ID
+ */
+function peerIdToCode(peerId) {
+    // Take last 6 chars of the UUID and convert to digits only
+    const hex = peerId.replace(/-/g, '').slice(-8);
+    const num = parseInt(hex, 16) % 1000000;
+    return String(num).padStart(6, '0');
+}
+
+/**
+ * Destroy sender peer cleanly
+ */
+function destroySenderPeer() {
+    if (senderPeer) {
+        senderPeer.destroy();
+        senderPeer = null;
     }
 }
 
 /**
- * Download QR code as image
+ * Export side — create peer, show QR + code, wait for receiver
  */
-function downloadShareQR() {
-    const canvas = qrCodeDisplay.querySelector('canvas');
-    if (!canvas) return;
-    
-    const link = document.createElement('a');
-    const today = new Date();
-    const filename = `Share_QR_${today.getFullYear()}-${(today.getMonth()+1).toString().padStart(2,'0')}-${today.getDate().toString().padStart(2,'0')}.png`;
-    
-    link.download = filename;
-    link.href = canvas.toDataURL();
-    link.click();
-    
-    console.log('QR code downloaded');
+async function shareViaQR() {
+    console.log('Share via QR (WebRTC) clicked');
+
+    if (expenses.length === 0) {
+        showError('No expenses to share');
+        return;
+    }
+
+    // Show modal in loading state
+    shareQRModal.style.display = 'block';
+    document.body.classList.add('modal-open');
+    qrLoadingContainer.style.display = 'block';
+    qrResultContainer.style.display = 'none';
+    qrModalTitle.textContent = 'Setting up connection...';
+    qrModalDesc.textContent = 'Connecting to relay server';
+
+    destroySenderPeer();
+
+    try {
+        // Generate a random 6-digit code and use it as the peer ID
+        // This way the code entry on the receiver side maps directly to the peer ID
+        const code = String(Math.floor(100000 + Math.random() * 900000));
+        const customPeerId = 'expense-share-' + code;
+
+        senderPeer = new Peer(customPeerId, { debug: 0 });
+
+        senderPeer.on('open', (id) => {
+            console.log('Sender peer ID:', id);
+
+            // Show QR + code
+            qrLoadingContainer.style.display = 'none';
+            qrResultContainer.style.display = 'block';
+            qrModalTitle.textContent = 'Ready to Share!';
+            qrModalDesc.textContent = 'Scan the QR or enter the code on the other device';
+
+            // QR encodes the full peer ID so receiver can connect directly
+            qrCodeDisplay.innerHTML = '';
+            new QRCode(qrCodeDisplay, {
+                text: 'EXPENSE_PEER:' + id,
+                width: 220,
+                height: 220,
+                colorDark: '#000000',
+                colorLight: '#ffffff',
+                correctLevel: QRCode.CorrectLevel.M
+            });
+
+            document.getElementById('peerCodeDisplay').textContent = code;
+
+            const statusBox = document.getElementById('shareStatusBox');
+            statusBox.style.background = '#fff3cd';
+            statusBox.style.borderColor = '#ffc107';
+            statusBox.textContent = '⏳ Waiting for other device to connect...';
+        });
+
+        senderPeer.on('connection', (conn) => {
+            console.log('Receiver connected!');
+            const statusBox = document.getElementById('shareStatusBox');
+            statusBox.style.background = '#d4edda';
+            statusBox.style.borderColor = '#28a745';
+            statusBox.textContent = '✅ Device connected! Sending data...';
+
+            conn.on('open', () => {
+                const exportData = {
+                    version: '1.0',
+                    exportDate: new Date().toISOString(),
+                    totalExpenses: expenses.length,
+                    expenses: expenses
+                };
+                conn.send(JSON.stringify(exportData));
+                console.log('Data sent!');
+                statusBox.textContent = '✅ ' + expenses.length + ' expenses sent successfully!';
+
+                // Close modal after 2s
+                setTimeout(() => {
+                    destroySenderPeer();
+                    shareQRModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                }, 2000);
+            });
+
+            conn.on('error', (err) => {
+                console.error('Connection error:', err);
+                statusBox.style.background = '#f8d7da';
+                statusBox.style.borderColor = '#dc3545';
+                statusBox.textContent = '❌ Transfer failed. Please try again.';
+            });
+        });
+
+        senderPeer.on('error', (err) => {
+            console.error('Peer error:', err);
+            qrLoadingContainer.style.display = 'none';
+            qrResultContainer.style.display = 'none';
+            qrModalTitle.textContent = '❌ Connection Failed';
+            qrModalDesc.innerHTML = '<p style="color:#721c24">Could not connect to relay server. Check your internet connection and try again.</p>';
+        });
+
+    } catch (err) {
+        console.error('shareViaQR error:', err);
+        qrLoadingContainer.style.display = 'none';
+        qrModalTitle.textContent = '❌ Error';
+        qrModalDesc.innerHTML = '<p style="color:#721c24">' + err.message + '</p>';
+    }
 }
+
+/**
+ * Import side — connect to sender peer using full peer ID or 6-digit code
+ * @param {string} peerId — full PeerJS UUID OR 6-digit code
+ */
+async function connectToPeerAndReceive(peerId) {
+    const importStatus = document.getElementById('importJsonStatus');
+
+    // Show connecting status
+    importStatus.style.display = 'block';
+    importStatus.style.background = '#fff3cd';
+    importStatus.style.color = '#856404';
+    importStatus.style.border = '1px solid #ffc107';
+    importStatus.style.padding = '15px';
+    importStatus.style.borderRadius = '8px';
+    importStatus.style.marginTop = '15px';
+    importStatus.textContent = '🔄 Connecting to sender...';
+
+    if (receiverPeer) {
+        receiverPeer.destroy();
+        receiverPeer = null;
+    }
+
+    receiverPeer = new Peer({ debug: 0 });
+
+    receiverPeer.on('open', () => {
+        console.log('Receiver peer open, connecting to:', peerId);
+        const conn = receiverPeer.connect(peerId, { reliable: true });
+
+        conn.on('open', () => {
+            importStatus.textContent = '✅ Connected! Waiting for data...';
+        });
+
+        conn.on('data', (rawData) => {
+            console.log('Data received from sender');
+            try {
+                const jsonData = typeof rawData === 'string' ? JSON.parse(rawData) : rawData;
+
+                let importedExpenses;
+                if (jsonData.version && jsonData.expenses) {
+                    importedExpenses = jsonData.expenses;
+                } else if (Array.isArray(jsonData)) {
+                    importedExpenses = jsonData;
+                } else {
+                    throw new Error('Invalid data format received');
+                }
+
+                const existingIds = new Set(expenses.map(e => e.id));
+                const newExpenses = importedExpenses.filter(e => !existingIds.has(e.id));
+
+                expenses = [...expenses, ...newExpenses];
+                saveExpenses();
+                renderExpenses();
+                updateSummary();
+
+                importStatus.style.background = '#d4edda';
+                importStatus.style.color = '#155724';
+                importStatus.style.border = '1px solid #c3e6cb';
+                importStatus.textContent = '✅ Imported ' + newExpenses.length + ' new expenses!';
+
+                receiverPeer.destroy();
+                receiverPeer = null;
+
+                setTimeout(() => {
+                    importModal.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                }, 2000);
+
+            } catch (err) {
+                console.error('Data parse error:', err);
+                importStatus.style.background = '#f8d7da';
+                importStatus.style.color = '#721c24';
+                importStatus.style.border = '1px solid #f5c6cb';
+                importStatus.textContent = '❌ Failed to read data: ' + err.message;
+            }
+        });
+
+        conn.on('error', (err) => {
+            console.error('Conn error:', err);
+            importStatus.style.background = '#f8d7da';
+            importStatus.style.color = '#721c24';
+            importStatus.style.border = '1px solid #f5c6cb';
+            importStatus.textContent = '❌ Connection failed. Make sure the sender is ready.';
+        });
+    });
+
+    receiverPeer.on('error', (err) => {
+        console.error('Receiver peer error:', err);
+        importStatus.style.background = '#f8d7da';
+        importStatus.style.color = '#721c24';
+        importStatus.style.border = '1px solid #f5c6cb';
+        importStatus.textContent = '❌ Could not connect. Check internet and try again.';
+    });
+}
+
 
 /**
  * Auto-import from URL (when QR is scanned)
@@ -857,7 +970,7 @@ async function checkForAutoImport() {
     const urlParams = new URLSearchParams(window.location.search);
     const importUrl = urlParams.get('import');
     
-    if (importUrl && importUrl.includes('file.io')) {
+    if (importUrl && importUrl.includes('jsonblob.com') || importUrl.includes('file.io') || importUrl.includes('tmpfiles.org')) {
         console.log('Auto-import detected:', importUrl);
         
         try {
@@ -1503,7 +1616,7 @@ addBtn.addEventListener('click', addExpense);
 // Export to Excel button click
 exportExcelBtn.addEventListener('click', exportToExcel);
 
-// Export button - open modal
+// Export button - open export modal
 exportBtn.addEventListener('click', () => {
     exportModal.style.display = 'block';
     document.body.classList.add('modal-open');
@@ -1523,29 +1636,27 @@ exportQRBtn.addEventListener('click', () => {
     shareViaQR();
 });
 
-// Import button - open modal
+// Import button - open import modal
 importBtn.addEventListener('click', () => {
     importModal.style.display = 'block';
     document.body.classList.add('modal-open');
     importJsonStatus.style.display = 'none';
+    jsonFileInput.value = '';
 });
 
-// Import file option
+// Import file option — trigger hidden file input
 importFileBtn.addEventListener('click', () => {
     jsonFileInput.click();
 });
 
-// Import QR option
+// Import QR option — open scanner
 importQRBtn.addEventListener('click', () => {
     importModal.style.display = 'none';
     document.body.classList.remove('modal-open');
     startQRScanner();
 });
 
-// Download QR code button
-downloadQRBtn.addEventListener('click', downloadShareQR);
-
-// Close modals
+// Close modals via × buttons
 closeExportModal.addEventListener('click', () => {
     exportModal.style.display = 'none';
     document.body.classList.remove('modal-open');
@@ -1556,13 +1667,48 @@ closeImportModal.addEventListener('click', () => {
     document.body.classList.remove('modal-open');
 });
 
+// Close share modal — also tears down sender peer
 closeShareQRModal.addEventListener('click', () => {
+    destroySenderPeer();
+    shareQRModal.style.display = 'none';
+    document.body.classList.remove('modal-open');
+});
+
+// Cancel share button
+document.getElementById('cancelShareBtn').addEventListener('click', () => {
+    destroySenderPeer();
     shareQRModal.style.display = 'none';
     document.body.classList.remove('modal-open');
 });
 
 closeQRScannerModal.addEventListener('click', stopQRScanner);
 stopScanBtn.addEventListener('click', stopQRScanner);
+
+// Show code entry panel
+document.getElementById('importCodeBtn').addEventListener('click', () => {
+    document.getElementById('codeEntryPanel').style.display = 'block';
+    document.getElementById('peerCodeInput').focus();
+});
+
+// Connect with typed code — code is 6 digits, map back to peer ID via lookup
+// Since we can't reverse the hash, we store the full peer ID in the QR text
+// For code entry, sender must show the full peer ID as well — but we simplify:
+// the 6-digit code IS the peer ID directly (we'll use a short custom peer ID)
+document.getElementById('connectWithCodeBtn').addEventListener('click', () => {
+    const code = document.getElementById('peerCodeInput').value.trim();
+    if (code.length !== 6 || !/^\d{6}$/.test(code)) {
+        document.getElementById('importJsonStatus').style.display = 'block';
+        document.getElementById('importJsonStatus').style.background = '#f8d7da';
+        document.getElementById('importJsonStatus').style.color = '#721c24';
+        document.getElementById('importJsonStatus').style.border = '1px solid #f5c6cb';
+        document.getElementById('importJsonStatus').style.padding = '15px';
+        document.getElementById('importJsonStatus').style.borderRadius = '8px';
+        document.getElementById('importJsonStatus').style.marginTop = '15px';
+        document.getElementById('importJsonStatus').textContent = '❌ Please enter a valid 6-digit code.';
+        return;
+    }
+    connectToPeerAndReceive('expense-share-' + code);
+});
 
 // JSON file input change
 jsonFileInput.addEventListener('change', (e) => {
@@ -1572,7 +1718,7 @@ jsonFileInput.addEventListener('change', (e) => {
     }
 });
 
-// Close modal when clicking outside
+// Close modals when clicking the backdrop
 window.addEventListener('click', (e) => {
     if (e.target === exportModal) {
         exportModal.style.display = 'none';
